@@ -44,6 +44,21 @@ if errorlevel 1 (
   python -m pip install -U torch torchaudio --index-url https://download.pytorch.org/whl/cpu
 )
 python -m pip install -U funasr modelscope fastapi uvicorn soundfile
+rem CosyVoice2 is not on PyPI - it has to be cloned, and it needs its
+rem Matcha-TTS submodule plus a few extras that are not in its own list.
+if not exist "%ROOT%\third_party" mkdir "%ROOT%\third_party"
+if not exist "%ROOT%\third_party\CosyVoice" (
+  git clone --recursive https://github.com/FunAudioLLM/CosyVoice "%ROOT%\third_party\CosyVoice"
+) else (
+  pushd "%ROOT%\third_party\CosyVoice" && git submodule update --init --recursive & popd
+)
+if exist "%ROOT%\third_party\CosyVoice\requirements.txt" (
+  python -m pip install -U -r "%ROOT%\third_party\CosyVoice\requirements.txt"
+  if errorlevel 1 echo   ! some CosyVoice deps failed - TTS may not start
+) else (
+  echo   ! CosyVoice clone missing - check git and your network
+)
+python -m pip install -U python-multipart
 call deactivate
 
 echo.
