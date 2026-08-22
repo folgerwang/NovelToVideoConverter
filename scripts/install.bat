@@ -52,9 +52,13 @@ if not exist "%ROOT%\third_party\CosyVoice" (
 ) else (
   pushd "%ROOT%\third_party\CosyVoice" && git submodule update --init --recursive & popd
 )
-if exist "%ROOT%\third_party\CosyVoice\requirements.txt" (
-  python -m pip install -U -r "%ROOT%\third_party\CosyVoice\requirements.txt"
+if exist "%ROOT%\third_party\CosyVoice\cosyvoice" (
+  rem Curated list on purpose - the repo requirements.txt pins grpcio 1.57
+  rem and torch 2.3.1, which have no cp313 wheel and would clobber torch.
+  set "PIP_CONSTRAINT=%~dp0pip-constraints.txt"
+  python -m pip install -U -r "%~dp0cosyvoice-req.txt"
   if errorlevel 1 echo   ! some CosyVoice deps failed - TTS may not start
+  set "PIP_CONSTRAINT="
 ) else (
   echo   ! CosyVoice clone missing - check git and your network
 )

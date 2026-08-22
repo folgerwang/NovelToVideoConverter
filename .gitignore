@@ -38,3 +38,6 @@ desktop.ini
 
 # Stray git lock files moved aside by Claude (safe to delete this folder)
 _to_delete/
+
+# Cloned upstream source, not ours to vendor (setup.bat fetches it)
+third_party/

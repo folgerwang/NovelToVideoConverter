@@ -1,0 +1,53 @@
+# Curated CosyVoice2 inference requirements.
+#
+# Do NOT feed pip third_party/CosyVoice/requirements.txt directly. It pins
+# 2024-era versions and several of them have no cp313 wheel, so pip falls
+# back to building from source:
+#
+#   grpcio==1.57.0    builds from source, and its setup.py imports
+#                     pkg_resources, which setuptools 81+ removed ->
+#                     "ModuleNotFoundError: No module named 'pkg_resources'"
+#   torch==2.3.1      no cp313 wheel, and it would REPLACE the working
+#                     torch install.bat already put in this venv
+#   numpy==1.26.4     predates Python 3.13 support
+#   onnxruntime==1.18.0   no cp313 wheel
+#
+# This list is derived from the imports actually reachable from
+# cosyvoice/cli (the inference path we use), plus the three matcha modules
+# cosyvoice/flow pulls in. Deliberately left out:
+#
+#   grpcio, grpcio-tools   gRPC server only - never imported by cosyvoice
+#   gradio, fastapi-cli    demo UI only
+#   deepspeed, tensorboard training only
+#   pyarrow, pyworld       only in cosyvoice/dataset/processor.py (training)
+#   tensorrt-*             lazy import, only when load_trt=True (we pass False)
+#   ttsfrd                 optional frontend, already wrapped in try/except
+#   vllm                   optional LLM backend, not the path we take
+#   torch, torchaudio      already installed - must not be disturbed
+#
+# Pinned below = pure-python wheels that install on any Python, kept at the
+# versions this CosyVoice revision was built against. Unpinned = the upstream
+# pin has no cp313 wheel, so let pip resolve something current.
+
+# --- pinned: pure-python, API-sensitive -----------------------------------
+conformer==0.3.2
+diffusers==0.29.0
+HyperPyYAML==1.2.3
+inflect==7.3.1
+omegaconf==2.3.0
+transformers==4.51.3
+wetext==0.0.4
+x-transformers==2.11.24
+
+# --- unpinned: upstream pin predates Python 3.13 --------------------------
+einops
+modelscope
+numpy
+onnxruntime
+openai-whisper
+packaging
+regex
+rich
+scipy
+tiktoken
+tqdm

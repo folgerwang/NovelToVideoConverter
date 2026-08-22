@@ -1,0 +1,13 @@
+# Applied via PIP_CONSTRAINT while installing CosyVoice dependencies.
+#
+# setuptools 81 deprecated pkg_resources and 84 dropped it. pip builds every
+# sdist in an isolated environment with the newest setuptools, so any package
+# whose setup.py still does "import pkg_resources" dies with
+#
+#   ModuleNotFoundError: No module named 'pkg_resources'
+#
+# even though this venv itself is fine. A constraint reaches into that build
+# environment too, so holding setuptools below 81 keeps pkg_resources
+# available for the handful of sdists that still expect it.
+
+setuptools<81

@@ -105,13 +105,24 @@ echo   [deps] venv-audio is missing packages - installing ...
 python -m pip install -q -U fastapi uvicorn soundfile python-multipart funasr modelscope
 if errorlevel 1 echo   ! some venv-audio packages failed to install
 :cosy_check
-if exist "%ROOT%\third_party\CosyVoice\cosyvoice" goto audio_done
+if not exist "%ROOT%\third_party\CosyVoice\cosyvoice" goto cosy_clone
+python -c "import hyperpyyaml, whisper, onnxruntime, diffusers, conformer, wetext" >nul 2>&1
+if not errorlevel 1 goto audio_done
+goto cosy_deps
+:cosy_clone
 echo   [deps] CosyVoice is not cloned yet ^(it is not on PyPI^) - fetching ...
 if not exist "%ROOT%\third_party" mkdir "%ROOT%\third_party"
 git clone --recursive https://github.com/FunAudioLLM/CosyVoice "%ROOT%\third_party\CosyVoice"
 if errorlevel 1 goto cosy_failed
-python -m pip install -q -U -r "%ROOT%\third_party\CosyVoice\requirements.txt"
+:cosy_deps
+echo   [deps] installing CosyVoice inference requirements ...
+echo          Using scripts\cosyvoice-req.txt, not the repo requirements.txt -
+echo          that one pins grpcio 1.57 and torch 2.3.1, which do not build on
+echo          Python 3.13 and would overwrite the torch in this venv.
+set "PIP_CONSTRAINT=%~dp0scripts\pip-constraints.txt"
+python -m pip install -U -r "%~dp0scripts\cosyvoice-req.txt"
 if errorlevel 1 echo   ! some CosyVoice deps failed - TTS may not start
+set "PIP_CONSTRAINT="
 goto audio_done
 :cosy_failed
 echo   ! CosyVoice clone failed - check git and network. TTS will stay offline.
