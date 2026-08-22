@@ -27,8 +27,26 @@ function Test-Cuda {
 
 if (Test-Cuda) {
     $ver = (& $py -c "import torch;print(torch.__version__)" 2>$null)
-    Write-Host "  [torch] CUDA already working ($ver) - nothing to do"
-    exit 0
+    & $py -c "import torchaudio" 2>$null
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "  [torch] CUDA already working ($ver) - nothing to do"
+        exit 0
+    }
+    # torch is fine but torchaudio is not there. Pull it from the index
+    # matching the installed build rather than redoing the whole probe.
+    Write-Host "  [torch] CUDA works ($ver) but torchaudio is missing"
+    $tag = ($ver -split '\+')[1]
+    if ($tag) {
+        Write-Host "  [torch] installing torchaudio from $tag ..."
+        & $py -m pip install -q torchaudio --index-url "https://download.pytorch.org/whl/$tag"
+        & $py -c "import torchaudio" 2>$null
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "  +  torchaudio installed"
+            exit 0
+        }
+        Write-Host "  !  torchaudio not available on $tag"
+    }
+    Write-Host "  [torch] reinstalling all three together ..."
 }
 
 # Prefer the CUDA series the installed driver advertises, then walk back.
@@ -60,7 +78,15 @@ Write-Host "  [torch] removing the CPU-only build ..."
 foreach ($cu in $Cuda) {
     $url = "https://download.pytorch.org/whl/$cu"
     Write-Host "  [torch] trying $cu ..."
-    & $py -m pip install -q torch torchvision --index-url $url
+
+    # All three together, from the same index: ComfyUI imports torchaudio
+    # (comfy/ldm/lightricks/vae/audio_vae.py), and the three have to be
+    # ABI-matched, so a torchaudio left behind from PyPI is not enough.
+    & $py -m pip install -q torch torchvision torchaudio --index-url $url
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "  .  $cu is missing one of the three - retrying without torchaudio"
+        & $py -m pip install -q torch torchvision --index-url $url
+    }
     if ($LASTEXITCODE -ne 0) {
         Write-Host "  .  $cu has no wheel for this Python - next"
         continue
@@ -69,10 +95,23 @@ foreach ($cu in $Cuda) {
         $ver = (& $py -c "import torch;print(torch.__version__)" 2>$null)
         $gpu = (& $py -c "import torch;print(torch.cuda.get_device_name(0))" 2>$null)
         Write-Host "  +  torch $ver on $cu - CUDA OK ($gpu)"
+
+        & $py -c "import torchaudio" 2>$null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "  .  torchaudio missing - ComfyUI needs it, trying $cu ..."
+            & $py -m pip install -q torchaudio --index-url $url
+            & $py -c "import torchaudio" 2>$null
+            if ($LASTEXITCODE -ne 0) {
+                Write-Host "  !  torchaudio unavailable on $cu - ComfyUI will fail at"
+                Write-Host "     'import torchaudio' in comfy\ldm\lightricks\vae\audio_vae.py"
+            } else {
+                Write-Host "  +  torchaudio installed"
+            }
+        }
         exit 0
     }
     Write-Host "  .  $cu installed but CUDA still unavailable - next"
-    & $py -m pip uninstall -y torch torchvision 2>&1 | Out-Null
+    & $py -m pip uninstall -y torch torchvision torchaudio 2>&1 | Out-Null
 }
 
 Write-Host ""

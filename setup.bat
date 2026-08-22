@@ -432,11 +432,15 @@ rem ==========================================================
 :do_comfy
 title ComfyUI Flux.2
 call "%VENVS%\comfy\Scripts\activate.bat"
-rem On Windows the PyPI torch wheel is CPU-only, so a venv built with a
-rem plain "pip install torch" starts and then dies on the first CUDA call.
-python -c "import torch,sys; sys.exit(0 if torch.cuda.is_available() else 1)" >nul 2>&1
+rem Two ways this venv can be wrong, both fatal at startup:
+rem   - the PyPI torch wheel is CPU-only on Windows, so the first CUDA call
+rem     raises "Torch not compiled with CUDA enabled"
+rem   - torchaudio can be missing, and ComfyUI imports it from
+rem     comfy\ldm\lightricks\vae\audio_vae.py
+rem Check both here; the import fails the test if either is wrong.
+python -c "import torch, torchaudio, sys; sys.exit(0 if torch.cuda.is_available() else 1)" >nul 2>&1
 if not errorlevel 1 goto comfy_run
-echo   [torch] this venv has a CPU-only torch - installing the CUDA build ...
+echo   [torch] this venv needs a CUDA torch + torchaudio - fixing ...
 call deactivate
 call :do_gettorch "%VENVS%\comfy"
 if errorlevel 1 goto comfy_nocuda
