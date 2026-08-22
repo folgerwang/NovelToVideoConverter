@@ -41,5 +41,9 @@ rem Halves KV cache memory and roughly doubles the context you can hold.
 rem Set to: --cache-type-k q8_0 --cache-type-v q8_0
 set "KV_FLAGS="
 
+rem Leave empty to auto-probe cu130 / cu129 / cu128 / cu126 against the
+rem installed driver. Pin one with: -Cuda cu128
+set "TORCH_CUDA_ARG="
+
 set "VIDEO_RES=720x1280"
 exit /b 0

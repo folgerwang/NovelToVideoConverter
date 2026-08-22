@@ -38,8 +38,9 @@ echo   [2/4] venv-audio  (CosyVoice2 / FunASR - CPU is fine)
 if not exist "%VENVS%\audio" python -m venv "%VENVS%\audio"
 call "%VENVS%\audio\Scripts\activate.bat"
 python -m pip install -U pip
-rem Default PyPI already ships CUDA-enabled torch wheels. Pinning an old
-rem cu124 index breaks on new Python versions (no cp313/cp314 builds there).
+rem The CPU build is all these services need - TTS and ASR both run with
+rem --device cpu so the GPU stays free for slots A / B / C. On Windows the
+rem plain PyPI wheel IS the CPU build, which is what we want here.
 python -m pip install -U torch torchaudio
 if errorlevel 1 (
   echo   ! torch from PyPI failed - trying the cu128 index
@@ -85,11 +86,14 @@ if not exist "%COMFY%" git clone https://github.com/comfyanonymous/ComfyUI "%COM
 if not exist "%VENVS%\comfy" python -m venv "%VENVS%\comfy"
 call "%VENVS%\comfy\Scripts\activate.bat"
 python -m pip install -U pip
-python -m pip install -U torch torchvision
-if errorlevel 1 python -m pip install -U torch torchvision --index-url https://download.pytorch.org/whl/cu128
 python -m pip install -r "%COMFY%\requirements.txt"
-python -c "import torch;print('   torch',torch.__version__,'cuda',torch.cuda.is_available())"
 call deactivate
+rem ComfyUI needs CUDA, and on Windows the PyPI torch wheel is the CPU
+rem build - that is what caused "Torch not compiled with CUDA enabled".
+rem get-torch.bat installs from PyTorch's CUDA index and verifies
+rem torch.cuda.is_available() before declaring success.
+call "%~dp0get-torch.bat" "%VENVS%\comfy"
+if errorlevel 1 echo   ! slot B will not start until torch has CUDA
 
 echo.
 echo   Install done. Next: menu L (Hugging Face login), then 2 (download).
