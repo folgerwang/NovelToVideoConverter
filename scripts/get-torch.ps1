@@ -33,12 +33,24 @@ if (Test-Cuda) {
 
 # Prefer the CUDA series the installed driver advertises, then walk back.
 if (-not $Cuda -or $Cuda.Count -eq 0) {
-    $Cuda = @("cu130", "cu129", "cu128", "cu126")
+    # PyTorch publishes a handful of specific indexes, not one per driver
+    # version -- a driver reporting 13.1 has no cu131 index. CUDA is
+    # backward compatible, so keep the published indexes at or below what
+    # the driver supports, newest first, and drop the ones above it.
+    $known = @("cu130", "cu129", "cu128", "cu126")
+    $Cuda = $known
     $smi = (& nvidia-smi 2>$null | Out-String)
     if ($smi -match "CUDA Version:\s*(\d+)\.(\d+)") {
-        $pref = "cu$($Matches[1])$($Matches[2])"
-        Write-Host "  [torch] driver reports CUDA $($Matches[1]).$($Matches[2])"
-        $Cuda = @($pref) + ($Cuda | Where-Object { $_ -ne $pref })
+        $major = [int]$Matches[1]; $minor = [int]$Matches[2]
+        $driver = $major * 10 + $minor
+        Write-Host "  [torch] driver supports CUDA $major.$minor"
+        $usable = @($known | Where-Object { [int]($_ -replace 'cu', '') -le $driver })
+        if ($usable.Count -gt 0) {
+            $Cuda = $usable
+            Write-Host "  [torch] will try: $($Cuda -join ', ')"
+        } else {
+            Write-Host "  [torch] driver is older than every published index - trying all"
+        }
     }
 }
 
