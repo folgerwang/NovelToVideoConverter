@@ -31,6 +31,26 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from typing import List
 
+# FastAPI needs python-multipart to accept file uploads. Without it, merely
+# declaring the /align route raises at import and the whole process dies with a
+# traceback. Detect it up front so the server still starts and /health can say
+# what is wrong -- much easier to diagnose than a stack trace at boot.
+try:
+    import multipart  # noqa: F401
+    _MULTIPART = True
+except ImportError:
+    try:
+        import python_multipart  # noqa: F401
+        _MULTIPART = True
+    except ImportError:
+        _MULTIPART = False
+
+_NO_MULTIPART_MSG = (
+    "python-multipart is not installed in venv-audio, so file upload routes "
+    "are disabled. Fix it from the Bookreel menu: R (Repair deps). Or by hand: "
+    "venvs\\audio\\Scripts\\activate.bat && pip install python-multipart"
+)
+
 app = FastAPI(title="Bookreel Forced Alignment (FunASR)", version="1.0")
 app.add_middleware(
     CORSMiddleware,
@@ -181,44 +201,53 @@ def health():
         "model": CFG["model"],
         "device": CFG["device"],
         "loaded": _STATE["model"] is not None,
-        "error": _STATE["error"],
+        "upload_routes": _MULTIPART,
+        "error": _STATE["error"] or (None if _MULTIPART else _NO_MULTIPART_MSG),
     }
 
 
-@app.post("/align")
-async def align(audio: UploadFile = File(...), text: str = Form(...)):
-    path = await _save_upload(audio)
-    try:
-        sentences, duration = _align(path, text)
-    finally:
-        try:
-            os.unlink(path)
-        except OSError:
-            pass
-    return {
-        "sentences": sentences,
-        "srt": _build_srt(sentences),
-        "duration": duration,
-        "count": len(sentences),
-    }
+if _MULTIPART:
 
-
-@app.post("/srt")
-async def srt(audio: UploadFile = File(...), text: str = Form(...)):
-    path = await _save_upload(audio)
-    try:
-        sentences, _ = _align(path, text)
-    finally:
+    @app.post("/align")
+    async def align(audio: UploadFile = File(...), text: str = Form(...)):
+        path = await _save_upload(audio)
         try:
-            os.unlink(path)
-        except OSError:
-            pass
-    body = _build_srt(sentences)
-    return Response(
-        content=body.encode("utf-8"),
-        media_type="application/x-subrip; charset=utf-8",
-        headers={"Content-Disposition": 'attachment; filename="narration.srt"'},
-    )
+            sentences, duration = _align(path, text)
+        finally:
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+        return {
+            "sentences": sentences,
+            "srt": _build_srt(sentences),
+            "duration": duration,
+            "count": len(sentences),
+        }
+
+    @app.post("/srt")
+    async def srt(audio: UploadFile = File(...), text: str = Form(...)):
+        path = await _save_upload(audio)
+        try:
+            sentences, _ = _align(path, text)
+        finally:
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+        body = _build_srt(sentences)
+        return Response(
+            content=body.encode("utf-8"),
+            media_type="application/x-subrip; charset=utf-8",
+            headers={"Content-Disposition": 'attachment; filename="narration.srt"'},
+        )
+
+else:
+    # Routes still exist so callers get a clear 503 instead of a 404.
+    @app.post("/align")
+    @app.post("/srt")
+    def _upload_routes_disabled():
+        raise HTTPException(status_code=503, detail=_NO_MULTIPART_MSG)
 
 
 def main():
@@ -243,7 +272,11 @@ def main():
     print("[asr] model     : %s" % CFG["model"], flush=True)
     print("[asr] cache dir : %s" % CFG["cache"], flush=True)
     print("[asr] listening : http://%s:%d" % (args.host, args.port), flush=True)
-    print("[asr] POST /align with audio=<file> and text=<narration> to get an SRT", flush=True)
+    if _MULTIPART:
+        print("[asr] POST /align with audio=<file> and text=<narration> to get an SRT", flush=True)
+    else:
+        print("[asr] ! %s" % _NO_MULTIPART_MSG, flush=True)
+        print("[asr] ! serving /health only until then.", flush=True)
 
     if args.preload:
         _load()

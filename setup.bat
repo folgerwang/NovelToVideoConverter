@@ -22,6 +22,7 @@ echo   Bookreel - novel to video   [single RTX 4090 24GB]
 for /f "tokens=1,2 delims=," %%a in ('nvidia-smi --query-gpu^=memory.used^,memory.total --format^=csv^,noheader^,nounits 2^>nul') do echo   VRAM %%a MiB used of %%b MiB
 echo   --------------------------------------------------------
 echo    1   Install                 venvs + ComfyUI
+echo    R   Repair deps             install missing packages only
 echo    L   Log in to Hugging Face  needed for gated repos
 echo    2   Download model weights
 echo    3   Start CPU services      embeddings / TTS / ASR
@@ -38,6 +39,7 @@ echo.
 set "CH="
 set /p CH=  Choose: 
 if /I "%CH%"=="1" call "%~dp0scripts\install.bat" & goto menu
+if /I "%CH%"=="R" call "%~dp0scripts\repair.bat" & goto menu
 if /I "%CH%"=="L" call "%~dp0scripts\hf-login.bat" & goto menu
 if /I "%CH%"=="2" call "%~dp0scripts\download.bat" & goto menu
 if /I "%CH%"=="3" call "%~dp0scripts\run-light.bat" & pause & goto menu
