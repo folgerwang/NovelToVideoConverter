@@ -22,7 +22,6 @@ echo   Bookreel - novel to video   [single RTX 4090 24GB]
 for /f "tokens=1,2 delims=," %%a in ('nvidia-smi --query-gpu^=memory.used^,memory.total --format^=csv^,noheader^,nounits 2^>nul') do echo   VRAM %%a MiB used of %%b MiB
 echo   --------------------------------------------------------
 echo    1   Install                 venvs + ComfyUI
-echo    R   Repair deps             install missing packages only
 echo    L   Log in to Hugging Face  needed for gated repos
 echo    2   Download model weights
 echo    3   Start CPU services      embeddings / TTS / ASR
@@ -39,10 +38,9 @@ echo.
 set "CH="
 set /p CH=  Choose: 
 if /I "%CH%"=="1" call "%~dp0scripts\install.bat" & goto menu
-if /I "%CH%"=="R" call "%~dp0scripts\repair.bat" & goto menu
 if /I "%CH%"=="L" call "%~dp0scripts\hf-login.bat" & goto menu
 if /I "%CH%"=="2" call "%~dp0scripts\download.bat" & goto menu
-if /I "%CH%"=="3" call "%~dp0scripts\run-light.bat" & pause & goto menu
+if /I "%CH%"=="3" goto services
 if /I "%CH%"=="A" goto slot_a
 if /I "%CH%"=="B" goto slot_b
 if /I "%CH%"=="C" goto slot_c
@@ -78,3 +76,57 @@ call "%~dp0scripts\stop.bat"
 start "Hailuo video" cmd /k "%~dp0scripts\run-hailuo.bat"
 pause
 goto menu
+
+:services
+call :ensure_audio
+call :ensure_tools
+call "%~dp0scripts\run-light.bat"
+pause
+goto menu
+
+rem ==========================================================
+rem  Dependency guards. A venv built by an older install.bat
+rem  will not have packages added later, so check before use
+rem  and install only what is actually missing. Cheap when
+rem  everything is already there - one python import test.
+rem ==========================================================
+
+:ensure_audio
+if not exist "%VENVS%\audio\Scripts\activate.bat" goto :eof
+call "%VENVS%\audio\Scripts\activate.bat"
+python -c "import fastapi, uvicorn, soundfile, funasr" >nul 2>&1
+if errorlevel 1 goto fix_audio
+python -c "import python_multipart" >nul 2>&1
+if not errorlevel 1 goto cosy_check
+python -c "import multipart" >nul 2>&1
+if not errorlevel 1 goto cosy_check
+:fix_audio
+echo   [deps] venv-audio is missing packages - installing ...
+python -m pip install -q -U fastapi uvicorn soundfile python-multipart funasr modelscope
+if errorlevel 1 echo   ! some venv-audio packages failed to install
+:cosy_check
+if exist "%ROOT%\third_party\CosyVoice\cosyvoice" goto audio_done
+echo   [deps] CosyVoice is not cloned yet ^(it is not on PyPI^) - fetching ...
+if not exist "%ROOT%\third_party" mkdir "%ROOT%\third_party"
+git clone --recursive https://github.com/FunAudioLLM/CosyVoice "%ROOT%\third_party\CosyVoice"
+if errorlevel 1 goto cosy_failed
+python -m pip install -q -U -r "%ROOT%\third_party\CosyVoice\requirements.txt"
+if errorlevel 1 echo   ! some CosyVoice deps failed - TTS may not start
+goto audio_done
+:cosy_failed
+echo   ! CosyVoice clone failed - check git and network. TTS will stay offline.
+:audio_done
+call deactivate
+goto :eof
+
+:ensure_tools
+if not exist "%VENVS%\tools\Scripts\activate.bat" goto :eof
+call "%VENVS%\tools\Scripts\activate.bat"
+python -c "import fastapi, uvicorn, sentence_transformers" >nul 2>&1
+if not errorlevel 1 goto tools_done
+echo   [deps] venv-tools is missing packages - installing ...
+python -m pip install -q -U fastapi uvicorn sentence-transformers pillow requests ffmpeg-python
+if errorlevel 1 echo   ! some venv-tools packages failed to install
+:tools_done
+call deactivate
+goto :eof
