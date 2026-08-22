@@ -4,7 +4,7 @@ title Bookreel - download models
 call "%VENVS%\llm\Scripts\activate.bat"
 echo.
 echo   Cache dir: %HF_HOME%
-echo   NOTE 24GB cards can only run quantized weights. Do NOT pull BF16 (56GB).
+echo   NOTE 24GB cards can only run 4-bit weights. Do NOT pull BF16 or FP8.
 echo.
 hf auth whoami >nul 2>&1
 if errorlevel 1 (
@@ -14,20 +14,17 @@ if errorlevel 1 (
   pause
 )
 
-echo   [1/5] %M_MAIN_AWQ%   ~18GB
-hf download %M_MAIN_AWQ% --local-dir "%MODELS%\qwen3.8-27b-awq"
+echo   [1/5] %M_MAIN_GGUF% / %F_MAIN_GGUF%   ~16GB
+hf download %M_MAIN_GGUF% --include "%F_MAIN_GGUF%" --local-dir "%MODELS%\qwen3.8-27b-gguf"
 if errorlevel 1 (
-  echo   ! primary repo failed - trying alternate 4-bit build %M_MAIN_ALT%
-  hf download %M_MAIN_ALT% --local-dir "%MODELS%\qwen3.8-27b-awq"
-  if errorlevel 1 (
-    echo   x both 4-bit repos failed. Check network / hf login.
-    echo     GGUF builds exist ^(unsloth, bartowski^) but vLLM cannot serve them well -
-    echo     use llama.cpp instead if you go that route.
-  )
+  echo   x download failed. Other quants in the same repo:
+  echo       Qwen3.8-27B-UD-Q4_K_S.gguf   15.4GB  more KV cache headroom
+  echo       Qwen3.8-27B-UD-Q5_K_M.gguf   19.8GB  better quality, tight on 24GB
+  echo     Change F_MAIN_GGUF in scripts\env.bat to switch.
 )
 
-echo   [2/5] %M_SMALL%   ~6GB
-hf download %M_SMALL% --local-dir "%MODELS%\qwen3-8b-awq"
+echo   [2/5] %M_SMALL_GGUF% / %F_SMALL_GGUF%   ~5GB
+hf download %M_SMALL_GGUF% --include "%F_SMALL_GGUF%" --local-dir "%MODELS%\qwen3-8b-gguf"
 if errorlevel 1 echo   ! skipped
 
 echo   [3/5] %M_EMBED%

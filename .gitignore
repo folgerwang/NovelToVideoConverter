@@ -41,3 +41,6 @@ _to_delete/
 
 # Cloned upstream source, not ours to vendor (setup.bat fetches it)
 third_party/
+
+# llama.cpp prebuilt binaries (get-llama.bat fetches them)
+llama/

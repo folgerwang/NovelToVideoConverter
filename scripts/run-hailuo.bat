@@ -9,6 +9,8 @@ if not exist "%HAILUO_DIR%\server.py" (
   pause
   exit /b 1
 )
+rem venv-llm now only holds the Hugging Face CLI - point this at whatever
+rem environment your Hailuo deployment actually needs.
 call "%VENVS%\llm\Scripts\activate.bat"
 python "%HAILUO_DIR%\server.py" --port 9000 --cors --resolution %VIDEO_RES% --offload --vae-tiling
 pause

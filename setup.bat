@@ -4,7 +4,7 @@ rem  Bookreel - novel to video, local deployment
 rem  Single RTX 4090 24GB: the heavy models cannot coexist,
 rem  so slots A / B / C take turns on the card.
 rem
-rem    Slot A  text    Qwen3.8-27B AWQ 4bit   ~20GB   :8000
+rem    Slot A  text    Qwen3.8-27B Q4_K_M     ~16GB   :8000  (llama.cpp)
 rem    Slot B  images  Flux.2 fp8 (ComfyUI)   ~18GB   :7860
 rem    Slot C  video   Hailuo 720x1280        ~22GB   :9000
 rem    Always on (CPU)  embeddings / TTS / ASR   0GB

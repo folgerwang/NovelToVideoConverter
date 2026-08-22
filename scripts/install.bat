@@ -20,12 +20,18 @@ if not exist "%LOGS%"   mkdir "%LOGS%"
 if not exist "%VENVS%"  mkdir "%VENVS%"
 
 echo.
-echo   [1/4] venv-llm  (vLLM - pulls its own matching torch)
+echo   [1/4] llama.cpp CUDA binaries + Hugging Face CLI
+rem vLLM is not usable here: PyPI ships manylinux wheels only, so on Windows
+rem pip falls back to the sdist, the CUDA extensions never build, and it
+rem fails at import with "No module named 'vllm._C_stable_libtorch'".
+rem llama.cpp has prebuilt Windows CUDA binaries and the same OpenAI API.
 if not exist "%VENVS%\llm" python -m venv "%VENVS%\llm"
 call "%VENVS%\llm\Scripts\activate.bat"
 python -m pip install -U pip
-python -m pip install -U "vllm>=0.11" "huggingface_hub[cli]"
+python -m pip install -U "huggingface_hub[cli]"
 call deactivate
+call "%~dp0get-llama.bat"
+if errorlevel 1 echo   ! llama.cpp download failed - slot A will not start
 
 echo.
 echo   [2/4] venv-audio  (CosyVoice2 / FunASR - CPU is fine)
