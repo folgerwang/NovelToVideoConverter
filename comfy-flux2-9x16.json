@@ -1,0 +1,12 @@
+{
+  "_comment": "Flux.2 · 9:16 白板图 / 场景参考图。__PROMPT__ 与 __SEED__ 由网页控制台替换。节点名需与你的 ComfyUI 安装一致，改这里即可。",
+  "10": { "class_type": "UNETLoader", "inputs": { "unet_name": "flux2-dev.safetensors", "weight_dtype": "fp8_e4m3fn" } },
+  "11": { "class_type": "DualCLIPLoader", "inputs": { "clip_name1": "t5xxl_fp16.safetensors", "clip_name2": "clip_l.safetensors", "type": "flux" } },
+  "12": { "class_type": "VAELoader", "inputs": { "vae_name": "ae.safetensors" } },
+  "20": { "class_type": "CLIPTextEncode", "inputs": { "text": "__PROMPT__", "clip": ["11", 0] } },
+  "21": { "class_type": "CLIPTextEncode", "inputs": { "text": "多手多指, 面部畸变, 现代服饰, 字幕, logo, 广角畸变, 塑料感", "clip": ["11", 0] } },
+  "30": { "class_type": "EmptyLatentImage", "inputs": { "width": 1080, "height": 1920, "batch_size": 1 } },
+  "40": { "class_type": "KSampler", "inputs": { "seed": 0, "steps": 28, "cfg": 3.5, "sampler_name": "euler", "scheduler": "simple", "denoise": 1.0, "model": ["10", 0], "positive": ["20", 0], "negative": ["21", 0], "latent_image": ["30", 0] } },
+  "50": { "class_type": "VAEDecode", "inputs": { "samples": ["40", 0], "vae": ["12", 0] } },
+  "60": { "class_type": "SaveImage", "inputs": { "filename_prefix": "bookreel", "images": ["50", 0] } }
+}

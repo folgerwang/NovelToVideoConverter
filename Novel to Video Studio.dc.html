@@ -1,0 +1,917 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/classical-d362d489-8175-478e-8156-5e2f8f43f744/styles.css">
+<script src="_ds/classical-d362d489-8175-478e-8156-5e2f8f43f744/_ds_bundle.js"></script>
+<script src="./image-slot.js"></script>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@300;400;500;600&display=swap">
+<style>
+  body { margin:0; font-family:"Lora","Noto Serif SC",serif; }
+  h1,h2,h3,h4,h5,h6 { font-family:"Cormorant Garamond","Noto Serif SC",serif; }
+  a { color: var(--color-accent); text-decoration: none; }
+  a:hover { color: var(--color-accent-700); text-decoration: underline; }
+  .btn, .tag, .seg-opt, .seg { white-space: nowrap; flex: none; }
+  ::-webkit-scrollbar { width:10px; height:10px; }
+  ::-webkit-scrollbar-thumb { background: var(--color-neutral-300); border-radius:6px; }
+</style>
+</helmet>
+
+<div style="display:flex; height:100vh; min-width:1280px; background:var(--color-bg); color:var(--color-text); font-family:'Lora','Noto Serif SC',serif; font-size:14px;">
+
+  <aside style="width:236px; flex:none; display:flex; flex-direction:column; border-right:1px solid var(--color-divider); background:var(--color-neutral-100);">
+    <div style="padding:20px 18px 14px; border-bottom:1px solid var(--color-divider);">
+      <div style="font-family:'Cormorant Garamond','Noto Serif SC',serif; font-size:21px; letter-spacing:0.02em;">书影 · Bookreel</div>
+      <div style="font-size:11px; letter-spacing:0.16em; color:var(--color-accent); margin-top:3px;">NOVEL → VIDEO STUDIO</div>
+    </div>
+
+    <div style="padding:14px 12px 8px; border-bottom:1px solid var(--color-divider);">
+      <div style="font-size:10px; letter-spacing:0.14em; color:color-mix(in srgb, var(--color-text) 50%, transparent); padding:0 6px 6px;">当前项目</div>
+      <div style="padding:8px 10px; border:1px solid var(--color-divider); border-radius:var(--radius-md); background:var(--color-bg);">
+        <div style="font-family:'Cormorant Garamond','Noto Serif SC',serif; font-size:16px;">天龙八部 · 第一卷</div>
+        <div style="font-size:11px; color:color-mix(in srgb, var(--color-text) 55%, transparent); margin-top:2px; font-variant-numeric:tabular-nums;">6 人物 · 6 场景 · 42 片段</div>
+      </div>
+    </div>
+
+    <nav style="flex:1; overflow-y:auto; padding:12px 0;">
+      <sc-for list="{{ navGroups }}" as="g" hint-placeholder-count="4">
+        <div style="margin-bottom:14px;">
+          <div style="font-size:10px; letter-spacing:0.16em; color:color-mix(in srgb, var(--color-text) 45%, transparent); padding:0 18px 6px;">{{ g.label }}</div>
+          <sc-for list="{{ g.items }}" as="it" hint-placeholder-count="3">
+            <div onClick="{{ it.onClick }}" style="{{ it.style }}">
+              <span style="font-variant-numeric:tabular-nums; font-size:11px; opacity:0.55; width:16px;">{{ it.num }}</span>
+              <span>{{ it.label }}</span>
+            </div>
+          </sc-for>
+        </div>
+      </sc-for>
+    </nav>
+
+    <div style="border-top:1px solid var(--color-divider); padding:12px 18px 16px;">
+      <div style="display:flex; justify-content:space-between; font-size:11px; color:color-mix(in srgb, var(--color-text) 55%, transparent);">
+        <span>本地 GPU</span><span style="font-variant-numeric:tabular-nums;">2 × A100 · 78%</span>
+      </div>
+      <div style="height:3px; background:var(--color-neutral-300); border-radius:2px; margin-top:6px; overflow:hidden;">
+        <div style="width:78%; height:100%; background:var(--color-accent);"></div>
+      </div>
+      <div style="display:flex; justify-content:space-between; font-size:11px; color:color-mix(in srgb, var(--color-text) 55%, transparent); margin-top:10px;">
+        <span>队列</span><span style="font-variant-numeric:tabular-nums;">3 渲染中 · 12 等待</span>
+      </div>
+    </div>
+  </aside>
+
+  <div style="flex:1; display:flex; flex-direction:column; min-width:0;">
+
+    <header style="flex:none; display:flex; align-items:center; gap:18px; padding:16px 26px; border-bottom:1px solid var(--color-divider);">
+      <div style="flex:1; min-width:0;">
+        <div style="font-size:11px; letter-spacing:0.14em; color:var(--color-accent);">{{ viewKicker }}</div>
+        <h3 style="margin:2px 0 0; font-size:24px;">{{ viewTitle }}</h3>
+      </div>
+      <div style="display:flex; align-items:center; gap:10px;">
+        <span class="tag tag-outline">风格 · 写实电影感</span>
+        <span class="tag tag-neutral" style="font-variant-numeric:tabular-nums;">画幅 9:16</span>
+        <span class="tag tag-neutral" style="font-variant-numeric:tabular-nums;">片段 {{ segLabel }}</span>
+        <button class="btn btn-secondary">保存工程</button>
+        <button class="btn btn-primary">开始生成</button>
+      </div>
+    </header>
+
+    <main style="flex:1; overflow:auto; padding:24px 26px 40px;">
+
+      <!-- ═══ 小说导入 · 章节切分 ═══ -->
+      <sc-if value="{{ isImport }}" hint-placeholder-val="{{ true }}">
+        <div style="display:grid; grid-template-columns:264px minmax(0,1fr) 300px; gap:22px; align-items:start;">
+
+          <div style="display:flex; flex-direction:column; gap:18px;">
+            <div style="border:1px solid var(--color-divider); border-radius:var(--radius-md); padding:14px;">
+              <div style="font-size:10px; letter-spacing:0.14em; color:var(--color-accent); margin-bottom:10px;">源文件</div>
+              <div style="font-family:'Cormorant Garamond','Noto Serif SC',serif; font-size:17px;">天龙八部.txt</div>
+              <div style="font-size:11px; color:color-mix(in srgb, var(--color-text) 55%, transparent); margin-top:4px; font-variant-numeric:tabular-nums;">UTF-8 · 1.24 MB · 已解析 50 章</div>
+              <hr class="hr" style="margin:12px 0;">
+              <div style="display:flex; flex-direction:column; gap:7px;">
+                <button class="btn btn-secondary btn-block" style="margin:0;">重新上传</button>
+                <button class="btn btn-ghost" style="justify-content:flex-start;">粘贴文本 / 从链接导入</button>
+              </div>
+            </div>
+
+            <div style="border:1px solid var(--color-divider); border-radius:var(--radius-md); padding:14px;">
+              <div style="font-size:10px; letter-spacing:0.14em; color:var(--color-accent); margin-bottom:10px;">切分方式</div>
+              <label class="radio" style="display:flex; margin-bottom:8px;"><input type="radio" name="split" checked="checked"><span class="dot"></span>章节标题正则（第 X 章 / 一、二、三）</label>
+              <label class="radio" style="display:flex; margin-bottom:8px;"><input type="radio" name="split"><span class="dot"></span>空行 + 字数阈值</label>
+              <label class="radio" style="display:flex;"><input type="radio" name="split"><span class="dot"></span>手动标记</label>
+              <hr class="hr" style="margin:12px 0;">
+              <div class="field"><label>单章最大字数</label><input class="input" value="6000"></div>
+            </div>
+
+            <div style="border:1px solid var(--color-divider); border-radius:var(--radius-md); overflow:hidden;">
+              <div style="font-size:10px; letter-spacing:0.14em; color:var(--color-accent); padding:12px 14px 8px;">章节（50）</div>
+              <sc-for list="{{ chapters }}" as="c" hint-placeholder-count="6">
+                <div style="{{ c.style }}">
+                  <span style="font-variant-numeric:tabular-nums; opacity:0.5; font-size:11px;">{{ c.num }}</span>
+                  <span style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ c.title }}</span>
+                  <span style="font-variant-numeric:tabular-nums; font-size:11px; opacity:0.5;">{{ c.words }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+
+          <div style="border:1px solid var(--color-divider); border-radius:var(--radius-md); background:var(--color-neutral-100); padding:30px 38px 34px;">
+            <div style="display:flex; align-items:baseline; justify-content:space-between; border-bottom:1px solid var(--color-divider); padding-bottom:12px; margin-bottom:22px;">
+              <h4 style="margin:0; font-size:22px;">一　青衫磊落险峰行</h4>
+              <span style="font-size:11px; color:color-mix(in srgb, var(--color-text) 55%, transparent); font-variant-numeric:tabular-nums;">5 842 字 · 预估 42 片段 · 07:00</span>
+            </div>
+            <div style="font-size:15px; line-height:2.05; text-align:justify; letter-spacing:0.01em;">
+              <p>　　青光闪动，一柄<span style="border-bottom:1px dotted var(--color-accent);">青钢剑</span>倏地刺出，指向<span style="border-bottom:1px solid var(--color-accent); color:var(--color-accent-800);">中年汉子</span>左肩，<span style="border-bottom:1px solid var(--color-accent); color:var(--color-accent-800);">使剑少年</span>不待剑招用老，腕抖剑斜，剑锋已削向那汉子右颈。那中年汉子竖剑挡格，铮的一声响，双剑相击，嗡嗡做声，震声未绝，双刃剑光霍霍，已拆了三招。中年汉子长剑猛地击落，直斩少年顶门。那少年避向右侧，左手剑诀斜引，青钢剑疾刺那汉子大腿。</p>
+              <p>　　两人剑法迅捷，全力相搏。</p>
+              <p>　　<span style="border-bottom:1px dotted var(--color-accent);">练武厅</span>东边坐着二人。上首是个四十左右的<span style="border-bottom:1px solid var(--color-accent); color:var(--color-accent-800);">中年道姑</span>，铁青着脸，嘴唇紧闭。下首是个五十余岁的<span style="border-bottom:1px solid var(--color-accent); color:var(--color-accent-800);">老者</span>，右手捻着长须，神情甚是得意。两人的座位相距一丈有余，身后各站着二十余名男女弟子。西边一排椅子上坐着十余位宾客。东西双方的目光都集注于场中二人的角斗。</p>
+              <p>　　眼见那少年与中年汉子已拆到七十余招，剑招越来越紧，兀自未分胜败。突然中年汉子长剑挥出，用力猛了，身子微晃，似欲摔跌。西边宾客中一个<span style="border-bottom:1px solid var(--color-accent); color:var(--color-accent-800);">身穿青衫的年轻男子</span>忍不住“嗤”的一声笑。他随即知道失态，忙伸手按住了口。</p>
+              <p style="margin:0;">　　便在这</p>
+            </div>
+            <div style="display:flex; gap:16px; margin-top:24px; padding-top:14px; border-top:1px solid var(--color-divider); font-size:11px; color:color-mix(in srgb, var(--color-text) 55%, transparent);">
+              <span><span style="display:inline-block; width:14px; border-bottom:1px solid var(--color-accent); vertical-align:middle;"></span> 人物指称</span>
+              <span><span style="display:inline-block; width:14px; border-bottom:1px dotted var(--color-accent); vertical-align:middle;"></span> 场景 / 道具</span>
+            </div>
+          </div>
+
+          <div style="display:flex; flex-direction:column; gap:18px;">
+            <div style="border:1px solid var(--color-divider); border-radius:var(--radius-md); padding:14px;">
+              <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:10px;">
+                <span style="font-size:10px; letter-spacing:0.14em; color:var(--color-accent);">自动抽取</span>
+                <span style="font-size:11px; color:color-mix(in srgb, var(--color-text) 50%, transparent);">本章</span>
+              </div>
+              <sc-for list="{{ extracts }}" as="e" hint-placeholder-count="4">
+                <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid var(--color-divider);">
+                  <span>{{ e.label }}</span>
+                  <span style="font-variant-numeric:tabular-nums; font-family:'Cormorant Garamond',serif; font-size:18px; color:var(--color-accent-700);">{{ e.count }}</span>
+                </div>
+              </sc-for>
+              <div style="font-size:12px; line-height:1.9; color:color-mix(in srgb, var(--color-text) 65%, transparent); margin-top:12px;">别名归并：段誉 ← 青衫年轻男子 / 那书生；左子穆 ← 五十余岁老者。</div>
+            </div>
+
+            <div style="border:1px solid var(--color-divider); border-radius:var(--radius-md); padding:14px;">
+              <div style="font-size:10px; letter-spacing:0.14em; color:var(--color-accent); margin-bottom:12px;">下一步</div>
+              <div style="display:flex; flex-direction:column; gap:8px;">
+                <button class="btn btn-primary btn-block" style="margin:0;">生成人物白板图 · 9:16</button>
+                <button class="btn btn-secondary btn-block" style="margin:0;">生成场景参考图</button>
+                <button class="btn btn-secondary btn-block" style="margin:0;">本章转剧本</button>
+              </div>
+              <div style="font-size:11px; line-height:1.8; color:color-mix(in srgb, var(--color-text) 55%, transparent); margin-top:12px;">白板图用 Flux.2 出图，性格标签会写进容貌 prompt；场景图与人物图共用同一风格与色温种子。</div>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+
+      <!-- ═══ 人物资料库 ═══ -->
+      <sc-if value="{{ isCharacters }}" hint-placeholder-val="{{ false }}">
+        <div style="display:grid; grid-template-columns:minmax(0,1fr) 320px; gap:24px; align-items:start;">
+          <div>
+            <div style="display:flex; align-items:center; gap:10px; margin-bottom:16px;">
+              <div class="seg">
+                <label class="seg-opt"><input type="radio" name="cf" checked="checked">全部 6</label>
+                <label class="seg-opt"><input type="radio" name="cf">主角 1</label>
+                <label class="seg-opt"><input type="radio" name="cf">待审 2</label>
+              </div>
+              <div style="flex:1;"></div>
+              <button class="btn btn-secondary">批量重绘</button>
+              <button class="btn btn-primary">新增人物</button>
+            </div>
+            <div style="display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:18px;">
+              <sc-for list="{{ characters }}" as="c" hint-placeholder-count="6">
+                <div style="border:1px solid var(--color-divider); border-radius:var(--radius-md); overflow:hidden; background:var(--color-neutral-100);">
+                  <div class="plate" style="aspect-ratio:9/16; position:relative;">
+                    <image-slot id="{{ c.slot }}" shape="rect" placeholder="{{ c.slotHint }}"></image-slot>
+                  </div>
+                  <div style="padding:12px 13px 14px;">
+                    <div style="display:flex; align-items:baseline; justify-content:space-between;">
+                      <span style="font-family:'Cormorant Garamond','Noto Serif SC',serif; font-size:19px;">{{ c.name }}</span>
+                      <span style="font-size:11px; color:color-mix(in srgb, var(--color-text) 50%, transparent);">{{ c.role }}</span>
+                    </div>
+                    <div style="font-size:12px; line-height:1.8; margin-top:6px; color:color-mix(in srgb, var(--color-text) 75%, transparent);">{{ c.look }}</div>
+                    <div style="display:flex; flex-wrap:wrap; gap:5px; margin-top:9px;">
+                      <sc-for list="{{ c.traits }}" as="t" hint-placeholder-count="3">
+                        <span class="tag tag-accent">{{ t }}</span>
+                      </sc-for>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-top:11px; padding-top:9px; border-top:1px solid var(--color-divider); font-size:11px; color:color-mix(in srgb, var(--color-text) 50%, transparent); font-variant-numeric:tabular-nums;">
+                      <span>seed {{ c.seed }}</span>
+                      <span>{{ c.status }}</span>
+                    </div>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+
+          <div style="border:1px solid var(--color-divider); border-radius:var(--radius-md); padding:16px; position:sticky; top:0;">
+            <div style="font-size:10px; letter-spacing:0.14em; color:var(--color-accent);">选中 · 人物档案</div>
+            <h4 style="margin:6px 0 0; font-size:26px;">段誉</h4>
+            <div style="font-size:11px; color:color-mix(in srgb, var(--color-text) 55%, transparent);">主角 · 大理段氏 · 出场 38 章</div>
+            <hr class="hr">
+            <div style="font-size:10px; letter-spacing:0.14em; color:var(--color-accent); margin-bottom:8px;">性格 → 容貌 对照</div>
+            <sc-for list="{{ traitMap }}" as="m" hint-placeholder-count="4">
+              <div style="display:grid; grid-template-columns:76px 1fr; gap:10px; padding:7px 0; border-bottom:1px solid var(--color-divider); font-size:12.5px;">
+                <span style="color:var(--color-accent-700);">{{ m.trait }}</span>
+                <span style="color:color-mix(in srgb, var(--color-text) 78%, transparent); line-height:1.7;">{{ m.face }}</span>
+              </div>
+            </sc-for>
+            <hr class="hr">
+            <div style="font-size:10px; letter-spacing:0.14em; color:var(--color-accent); margin-bottom:8px;">一致性锁定</div>
+            <div style="display:flex; flex-direction:column; gap:8px; font-size:12.5px;">
+              <label class="radio" style="display:flex;"><input type="checkbox" checked="checked"><span class="dot"></span>锁定 seed 与 LoRA 权重</label>
+              <label class="radio" style="display:flex;"><input type="checkbox" checked="checked"><span class="dot"></span>三视图作为视频首帧参考</label>
+              <label class="radio" style="display:flex;"><input type="checkbox"><span class="dot"></span>允许按章节更换服装</label>
+            </div>
+            <hr class="hr">
+            <div style="font-size:10px; letter-spacing:0.14em; color:var(--color-accent); margin-bottom:8px;">白板图 prompt</div>
+            <div style="font-size:12px; line-height:1.85; font-family:'Cormorant Garamond','Noto Serif SC',serif; color:color-mix(in srgb, var(--color-text) 80%, transparent); border:1px solid var(--color-divider); border-radius:var(--radius-md); padding:10px 11px; background:var(--color-neutral-100);">全身立绘，纯白背景，柔和顶光；二十岁书生，青布长衫，眉目清朗略带稚气，神情温厚固执，腰悬折扇；写实电影质感，9:16，无文字。</div>
+            <div style="display:flex; gap:8px; margin-top:12px;">
+              <button class="btn btn-secondary" style="flex:1;">重绘</button>
+              <button class="btn btn-primary" style="flex:1;">通过</button>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+
+      <!-- ═══ 场景资料库 ═══ -->
+      <sc-if value="{{ isScenes }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:16px;">
+          <div class="seg">
+            <label class="seg-opt"><input type="radio" name="sf" checked="checked">全部 6</label>
+            <label class="seg-opt"><input type="radio" name="sf">内景 3</label>
+            <label class="seg-opt"><input type="radio" name="sf">外景 3</label>
+          </div>
+          <div style="flex:1;"></div>
+          <span style="font-size:11px; color:color-mix(in srgb, var(--color-text) 55%, transparent);">同一时空色温：3200K 暖 · 统一雾感 0.18</span>
+          <button class="btn btn-primary">生成缺失场景</button>
+        </div>
+        <div style="display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:20px;">
+          <sc-for list="{{ scenes }}" as="s" hint-placeholder-count="6">
+            <div style="border:1px solid var(--color-divider); border-radius:var(--radius-md); overflow:hidden; background:var(--color-neutral-100);">
+              <div style="display:flex;">
+                <div class="plate" style="width:38%; aspect-ratio:9/16; flex:none;">
+                  <image-slot id="{{ s.slot }}" shape="rect" placeholder="{{ s.slotHint }}"></image-slot>
+                </div>
+                <div style="padding:14px 15px; flex:1; min-width:0; display:flex; flex-direction:column;">
+                  <div style="font-family:'Cormorant Garamond','Noto Serif SC',serif; font-size:19px;">{{ s.name }}</div>
+                  <div style="font-size:11px; color:var(--color-accent-700); margin-top:2px;">{{ s.when }}</div>
+                  <div style="font-size:12px; line-height:1.8; margin-top:9px; color:color-mix(in srgb, var(--color-text) 72%, transparent); flex:1;">{{ s.desc }}</div>
+                  <div style="display:flex; flex-wrap:wrap; gap:5px; margin-top:10px;">
+                    <span class="tag tag-neutral">{{ s.light }}</span>
+                    <span class="tag tag-neutral">{{ s.lens }}</span>
+                  </div>
+                  <div style="font-size:11px; color:color-mix(in srgb, var(--color-text) 50%, transparent); margin-top:10px; padding-top:8px; border-top:1px solid var(--color-divider); font-variant-numeric:tabular-nums;">{{ s.uses }}</div>
+                </div>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </sc-if>
+
+      <!-- ═══ 风格预设 ═══ -->
+      <sc-if value="{{ isStyle }}" hint-placeholder-val="{{ false }}">
+        <div style="display:grid; grid-template-columns:minmax(0,1fr) 320px; gap:24px; align-items:start;">
+          <div>
+            <p style="font-size:13px; color:color-mix(in srgb, var(--color-text) 65%, transparent); max-width:640px; margin-bottom:18px;">风格一经选定即写入全局：人物白板图、场景参考图、每个视频片段共用同一组风格 token 与色彩 LUT，避免片段之间跳风格。</p>
+            <div style="display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:16px;">
+              <sc-for list="{{ styles }}" as="p" hint-placeholder-count="8">
+                <div style="{{ p.cardStyle }}">
+                  <div class="plate" style="aspect-ratio:9/16;">
+                    <image-slot id="{{ p.slot }}" shape="rect" placeholder="{{ p.name }}"></image-slot>
+                  </div>
+                  <div style="padding:11px 12px 13px;">
+                    <div style="display:flex; align-items:center; justify-content:space-between;">
+                      <span style="font-family:'Cormorant Garamond','Noto Serif SC',serif; font-size:17px;">{{ p.name }}</span>
+                      <span style="{{ p.markStyle }}">{{ p.mark }}</span>
+                    </div>
+                    <div style="font-size:11.5px; line-height:1.75; color:color-mix(in srgb, var(--color-text) 65%, transparent); margin-top:5px;">{{ p.desc }}</div>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+          <div style="border:1px solid var(--color-divider); border-radius:var(--radius-md); padding:16px;">
+            <div style="font-size:10px; letter-spacing:0.14em; color:var(--color-accent);">风格参数 · 写实电影感</div>
+            <hr class="hr" style="margin:12px 0;">
+            <div class="field" style="margin-bottom:12px;"><label>色彩 LUT</label><input class="input" value="Kodak 2383 · 暖调 -6"></div>
+            <div class="field" style="margin-bottom:12px;"><label>颗粒 / 噪点</label><input class="input" value="35mm 细颗粒 0.22"></div>
+            <div class="field" style="margin-bottom:12px;"><label>镜头</label><input class="input" value="35mm / 85mm 双焦段，浅景深"></div>
+            <div class="field" style="margin-bottom:12px;"><label>风格 LoRA 权重</label><input class="input" value="0.62"></div>
+            <hr class="hr">
+            <div style="font-size:10px; letter-spacing:0.14em; color:var(--color-accent); margin-bottom:8px;">一致性</div>
+            <div style="display:flex; flex-direction:column; gap:8px; font-size:12.5px;">
+              <label class="radio" style="display:flex;"><input type="checkbox" checked="checked"><span class="dot"></span>全项目锁定风格（推荐）</label>
+              <label class="radio" style="display:flex;"><input type="checkbox" checked="checked"><span class="dot"></span>回忆 / 梦境段落允许切风格</label>
+            </div>
+            <div style="font-size:11px; line-height:1.8; color:color-mix(in srgb, var(--color-text) 55%, transparent); margin-top:12px;">切换风格会使已生成的 18 张参考图进入「待重绘」，剧本与分镜不受影响。</div>
+            <button class="btn btn-secondary btn-block">另存为自定义风格</button>
+          </div>
+        </div>
+      </sc-if>
+
+      <!-- ═══ 剧本 · 分镜 ═══ -->
+      <sc-if value="{{ isScript }}" hint-placeholder-val="{{ false }}">
+        <div style="display:grid; grid-template-columns:210px minmax(0,1fr) 300px; gap:20px; align-items:start;">
+          <div style="border:1px solid var(--color-divider); border-radius:var(--radius-md); overflow:hidden;">
+            <div style="font-size:10px; letter-spacing:0.14em; color:var(--color-accent); padding:12px 14px 8px;">场次</div>
+            <sc-for list="{{ sceneTree }}" as="n" hint-placeholder-count="5">
+              <div style="{{ n.style }}">
+                <span style="font-variant-numeric:tabular-nums; font-size:11px; opacity:0.5;">{{ n.num }}</span>
+                <span style="flex:1;">{{ n.title }}</span>
+                <span style="font-size:11px; opacity:0.5; font-variant-numeric:tabular-nums;">{{ n.count }}</span>
+              </div>
+            </sc-for>
+            <div style="padding:12px 14px; border-top:1px solid var(--color-divider);">
+              <button class="btn btn-ghost" style="padding:0;">＋ 新增场次</button>
+            </div>
+          </div>
+
+          <div style="border:1px solid var(--color-divider); border-radius:var(--radius-md); background:var(--color-neutral-100);">
+            <div style="display:flex; align-items:center; gap:12px; padding:13px 18px; border-bottom:1px solid var(--color-divider);">
+              <h4 style="margin:0; font-size:19px;">场次 01 · 无量剑练武厅比剑</h4>
+              <span class="tag tag-neutral" style="font-variant-numeric:tabular-nums;">6 片段 · 60s</span>
+              <div style="flex:1;"></div>
+              <button class="btn btn-ghost">重写本场</button>
+              <button class="btn btn-ghost">优化运镜</button>
+            </div>
+            <sc-for list="{{ shots }}" as="s" hint-placeholder-count="6">
+              <div style="display:grid; grid-template-columns:52px 1fr; gap:16px; padding:16px 18px; border-bottom:1px solid var(--color-divider);">
+                <div style="text-align:right;">
+                  <div style="font-family:'Cormorant Garamond',serif; font-size:26px; color:var(--color-accent); font-variant-numeric:tabular-nums; line-height:1;">{{ s.num }}</div>
+                  <div style="font-size:11px; color:color-mix(in srgb, var(--color-text) 50%, transparent); font-variant-numeric:tabular-nums; margin-top:4px;">{{ s.dur }}</div>
+                </div>
+                <div>
+                  <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px;">
+                    <span class="tag tag-outline">{{ s.move }}</span>
+                    <span class="tag tag-neutral">{{ s.size }}</span>
+                    <span class="tag tag-neutral">{{ s.trans }}</span>
+                  </div>
+                  <div style="font-size:14px; line-height:1.85; text-align:justify;">{{ s.desc }}</div>
+                  <div style="font-size:12.5px; line-height:1.8; color:var(--color-accent-700); margin-top:6px;">{{ s.line }}</div>
+                  <div style="font-size:11.5px; color:color-mix(in srgb, var(--color-text) 50%, transparent); margin-top:7px; font-variant-numeric:tabular-nums;">{{ s.meta }}</div>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+
+          <div style="border:1px solid var(--color-divider); border-radius:var(--radius-md); padding:16px; position:sticky; top:0;">
+            <div style="font-size:10px; letter-spacing:0.14em; color:var(--color-accent);">片段属性 · 03</div>
+            <hr class="hr" style="margin:12px 0;">
+            <div class="field" style="margin-bottom:12px;"><label>时长</label><input class="input" value="10 秒（默认切片）"></div>
+            <div class="field" style="margin-bottom:12px;"><label>运镜</label><input class="input" value="环绕 Arc · 顺时针 30°"></div>
+            <div class="field" style="margin-bottom:12px;"><label>起幅 → 落幅</label><input class="input" value="中景 → 中近景"></div>
+            <div class="field" style="margin-bottom:12px;"><label>转场</label><input class="input" value="硬切"></div>
+            <hr class="hr">
+            <div style="font-size:10px; letter-spacing:0.14em; color:var(--color-accent); margin-bottom:8px;">参考图绑定</div>
+            <div style="display:flex; gap:8px;">
+              <div class="plate" style="width:52px; aspect-ratio:9/16; flex:none;"><image-slot id="ref-a" shape="rect" placeholder="首帧"></image-slot></div>
+              <div class="plate" style="width:52px; aspect-ratio:9/16; flex:none;"><image-slot id="ref-b" shape="rect" placeholder="尾帧"></image-slot></div>
+              <div style="font-size:11.5px; line-height:1.75; color:color-mix(in srgb, var(--color-text) 60%, transparent);">首帧取场景图「练武厅」，尾帧由上一片段末帧续接，保证同一时空。</div>
+            </div>
+            <hr class="hr">
+            <div style="display:flex; gap:8px;">
+              <button class="btn btn-secondary" style="flex:1;">预览 prompt</button>
+              <button class="btn btn-primary" style="flex:1;">送入队列</button>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+
+      <!-- ═══ Prompt 面板 ═══ -->
+      <sc-if value="{{ isPrompt }}" hint-placeholder-val="{{ false }}">
+        <div style="display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:22px; align-items:start;">
+          <div style="border:1px solid var(--color-divider); border-radius:var(--radius-md); padding:18px;">
+            <div style="display:flex; align-items:baseline; justify-content:space-between;">
+              <h4 style="margin:0; font-size:20px;">Flux.2 · 图像</h4>
+              <span class="tag tag-neutral">本地 · 端口 7860</span>
+            </div>
+            <hr class="hr" style="margin:14px 0;">
+            <div style="display:grid; grid-template-columns:repeat(2,1fr); gap:12px;">
+              <div class="field"><label>分辨率</label><input class="input" value="1080 × 1920（9:16）"></div>
+              <div class="field"><label>采样步数</label><input class="input" value="28"></div>
+              <div class="field"><label>Guidance</label><input class="input" value="3.5"></div>
+              <div class="field"><label>Seed</label><input class="input" value="8842193（锁定）"></div>
+            </div>
+            <div class="field" style="margin-top:12px;"><label>正向 prompt</label><textarea class="input" style="min-height:118px; line-height:1.8;">全身立绘，纯白背景，柔和顶光；二十岁书生段誉，青布长衫，眉目清朗略带稚气，神情温厚固执，腰悬折扇；写实电影质感，35mm，浅景深，Kodak 2383 暖调，细颗粒；9:16 竖构图，无文字，无水印。</textarea></div>
+            <div class="field" style="margin-top:10px;"><label>负向 prompt</label><textarea class="input" style="min-height:62px; line-height:1.8;">多手多指，面部畸变，现代服饰，字幕，logo，广角畸变，塑料感。</textarea></div>
+            <div style="display:flex; gap:8px; margin-top:14px;">
+              <button class="btn btn-secondary" style="flex:1;">出 4 张候选</button>
+              <button class="btn btn-primary" style="flex:1;">写入资料库</button>
+            </div>
+          </div>
+
+          <div style="display:flex; flex-direction:column; gap:20px;">
+            <div style="border:1px solid var(--color-divider); border-radius:var(--radius-md); padding:18px;">
+              <div style="display:flex; align-items:baseline; justify-content:space-between;">
+                <h4 style="margin:0; font-size:20px;">MiniMax Hailuo · 视频</h4>
+                <span class="tag tag-neutral">本地部署 · 2 × A100</span>
+              </div>
+              <hr class="hr" style="margin:14px 0;">
+              <div style="display:grid; grid-template-columns:repeat(2,1fr); gap:12px;">
+                <div class="field"><label>片段时长</label><input class="input" value="10 秒"></div>
+                <div class="field"><label>输出</label><input class="input" value="1080 × 1920 · 25fps"></div>
+                <div class="field"><label>首帧</label><input class="input" value="scene-01-练武厅.png"></div>
+                <div class="field"><label>尾帧</label><input class="input" value="上一片段末帧（续接）"></div>
+                <div class="field"><label>运动强度</label><input class="input" value="0.55"></div>
+                <div class="field"><label>并发</label><input class="input" value="3"></div>
+              </div>
+              <div class="field" style="margin-top:12px;"><label>片段 prompt（03 · 环绕）</label><textarea class="input" style="min-height:104px; line-height:1.8;">练武厅内，两名剑客全力相搏，剑影交错，木地板扬起细尘。镜头以人物为轴顺时针环绕 30°，中景推至中近景，速度均匀；自然日光自高窗斜入，尘埃可见；写实电影质感，暖调，细颗粒，无字幕。</textarea></div>
+              <div style="display:flex; gap:8px; margin-top:14px;">
+                <button class="btn btn-secondary" style="flex:1;">试跑 1 段</button>
+                <button class="btn btn-primary" style="flex:1;">全场次批量提交</button>
+              </div>
+            </div>
+
+            <div style="border:1px solid var(--color-divider); border-radius:var(--radius-md); padding:18px;">
+              <div style="font-size:10px; letter-spacing:0.14em; color:var(--color-accent); margin-bottom:10px;">自动注入（全局）</div>
+              <sc-for list="{{ injects }}" as="i" hint-placeholder-count="4">
+                <div style="display:grid; grid-template-columns:88px 1fr; gap:12px; padding:7px 0; border-bottom:1px solid var(--color-divider); font-size:12.5px;">
+                  <span style="color:var(--color-accent-700);">{{ i.k }}</span>
+                  <span style="color:color-mix(in srgb, var(--color-text) 75%, transparent); line-height:1.7;">{{ i.v }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+
+      <!-- ═══ 生成队列 ═══ -->
+      <sc-if value="{{ isQueue }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex; gap:26px; margin-bottom:18px;">
+          <sc-for list="{{ queueStats }}" as="q" hint-placeholder-count="4">
+            <div style="padding-right:26px; border-right:1px solid var(--color-divider);">
+              <div style="font-family:'Cormorant Garamond',serif; font-size:34px; line-height:1; font-weight:400; font-variant-numeric:tabular-nums; color:{{ q.color }};">{{ q.n }}</div>
+              <div style="font-size:11px; letter-spacing:0.1em; color:color-mix(in srgb, var(--color-text) 55%, transparent); margin-top:6px;">{{ q.label }}</div>
+            </div>
+          </sc-for>
+          <div style="flex:1;"></div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <button class="btn btn-secondary">暂停队列</button>
+            <button class="btn btn-primary">重试全部失败</button>
+          </div>
+        </div>
+        <table class="table">
+          <thead>
+            <tr>
+              <th style="width:70px;">片段</th>
+              <th style="width:150px;">场次</th>
+              <th>画面 / 运镜</th>
+              <th style="width:78px;">时长</th>
+              <th style="width:200px;">状态</th>
+              <th style="width:96px;">耗时</th>
+              <th style="width:90px;">操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <sc-for list="{{ queue }}" as="r" hint-placeholder-count="8">
+              <tr>
+                <td style="font-variant-numeric:tabular-nums; font-family:'Cormorant Garamond',serif; font-size:17px; color:var(--color-accent-700);">{{ r.id }}</td>
+                <td style="font-size:13px;">{{ r.scene }}</td>
+                <td style="font-size:13px;">{{ r.desc }}</td>
+                <td style="font-variant-numeric:tabular-nums; font-size:13px;">{{ r.dur }}</td>
+                <td>
+                  <div style="font-size:12px; margin-bottom:5px; color:{{ r.color }};">{{ r.state }}</div>
+                  <div style="height:3px; background:var(--color-neutral-300); border-radius:2px; overflow:hidden;">
+                    <div style="{{ r.barStyle }}"></div>
+                  </div>
+                </td>
+                <td style="font-variant-numeric:tabular-nums; font-size:13px;">{{ r.time }}</td>
+                <td><span style="color:var(--color-accent); font-size:12.5px; cursor:pointer;">{{ r.action }}</span></td>
+              </tr>
+            </sc-for>
+          </tbody>
+        </table>
+      </sc-if>
+
+      <!-- ═══ 成片时间线 ═══ -->
+      <sc-if value="{{ isTimeline }}" hint-placeholder-val="{{ false }}">
+        <div style="display:grid; grid-template-columns:300px minmax(0,1fr); gap:24px; align-items:start;">
+          <div>
+            <div class="plate" style="aspect-ratio:9/16;">
+              <image-slot id="player" shape="rect" placeholder="成片预览 9:16"></image-slot>
+            </div>
+            <div style="display:flex; align-items:center; gap:10px; margin-top:12px;">
+              <button class="btn btn-primary btn-icon" style="margin:0;">▶</button>
+              <div style="flex:1; height:3px; background:var(--color-neutral-300); border-radius:2px; overflow:hidden;">
+                <div style="width:34%; height:100%; background:var(--color-accent);"></div>
+              </div>
+              <span style="font-size:12px; font-variant-numeric:tabular-nums; color:color-mix(in srgb, var(--color-text) 55%, transparent);">02:24 / 07:00</span>
+            </div>
+            <hr class="hr">
+            <div style="display:flex; flex-direction:column; gap:7px; font-size:12.5px;">
+              <div style="display:flex; justify-content:space-between;"><span style="color:color-mix(in srgb, var(--color-text) 55%, transparent);">片段</span><span style="font-variant-numeric:tabular-nums;">42 / 42 已生成</span></div>
+              <div style="display:flex; justify-content:space-between;"><span style="color:color-mix(in srgb, var(--color-text) 55%, transparent);">分辨率</span><span style="font-variant-numeric:tabular-nums;">1080 × 1920 · 25fps</span></div>
+              <div style="display:flex; justify-content:space-between;"><span style="color:color-mix(in srgb, var(--color-text) 55%, transparent);">旁白</span><span>男声 · 评书腔 · 0.95×</span></div>
+            </div>
+            <button class="btn btn-primary btn-block">导出成片 MP4</button>
+          </div>
+
+          <div style="border:1px solid var(--color-divider); border-radius:var(--radius-md); padding:16px; overflow:hidden;">
+            <div style="display:flex; align-items:center; gap:12px; margin-bottom:14px;">
+              <span style="font-size:10px; letter-spacing:0.14em; color:var(--color-accent);">第一章 · 时间线</span>
+              <div style="flex:1;"></div>
+              <span style="font-size:11px; color:color-mix(in srgb, var(--color-text) 50%, transparent); font-variant-numeric:tabular-nums;">刻度 10 秒 / 格</span>
+            </div>
+            <div style="display:flex; gap:6px; overflow-x:auto; padding-bottom:8px;">
+              <sc-for list="{{ tlClips }}" as="c" hint-placeholder-count="9">
+                <div style="{{ c.style }}">
+                  <div style="aspect-ratio:9/16; background:var(--color-neutral-200); border-bottom:1px solid var(--color-divider); display:flex; align-items:flex-end; padding:5px;">
+                    <span style="font-family:'Cormorant Garamond',serif; font-size:15px; color:var(--color-neutral-600); font-variant-numeric:tabular-nums;">{{ c.id }}</span>
+                  </div>
+                  <div style="padding:5px 6px; font-size:10.5px; line-height:1.5; color:color-mix(in srgb, var(--color-text) 65%, transparent);">{{ c.move }}</div>
+                </div>
+              </sc-for>
+            </div>
+            <div style="margin-top:14px; display:flex; flex-direction:column; gap:8px;">
+              <sc-for list="{{ tracks }}" as="t" hint-placeholder-count="3">
+                <div style="display:grid; grid-template-columns:64px 1fr; gap:10px; align-items:center;">
+                  <span style="font-size:11px; color:color-mix(in srgb, var(--color-text) 55%, transparent);">{{ t.name }}</span>
+                  <div style="height:22px; border:1px solid var(--color-divider); border-radius:var(--radius-sm); display:flex; overflow:hidden;">
+                    <div style="{{ t.blockStyle }}">{{ t.label }}</div>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+            <hr class="hr">
+            <div style="display:flex; gap:10px; font-size:12.5px; color:color-mix(in srgb, var(--color-text) 60%, transparent);">
+              <span>转场：硬切 34 · 叠化 6 · 黑场 2</span>
+              <span>·</span>
+              <span>风格一致性检测：通过（偏差 0.04）</span>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+
+      <!-- ═══ 任务日志 ═══ -->
+      <sc-if value="{{ isLogs }}" hint-placeholder-val="{{ false }}">
+        <div style="display:grid; grid-template-columns:minmax(0,1fr) 280px; gap:24px; align-items:start;">
+          <div>
+            <div style="display:flex; align-items:center; gap:10px; margin-bottom:14px;">
+              <div class="seg">
+                <label class="seg-opt"><input type="radio" name="lg" checked="checked">全部</label>
+                <label class="seg-opt"><input type="radio" name="lg">警告 3</label>
+                <label class="seg-opt"><input type="radio" name="lg">错误 1</label>
+              </div>
+              <div style="flex:1;"></div>
+              <button class="btn btn-secondary">导出日志</button>
+            </div>
+            <table class="table">
+              <thead><tr><th style="width:96px;">时间</th><th style="width:74px;">级别</th><th style="width:112px;">模块</th><th>信息</th></tr></thead>
+              <tbody>
+                <sc-for list="{{ logs }}" as="l" hint-placeholder-count="9">
+                  <tr>
+                    <td style="font-variant-numeric:tabular-nums; font-size:12.5px; color:color-mix(in srgb, var(--color-text) 55%, transparent);">{{ l.t }}</td>
+                    <td><span style="{{ l.lvStyle }}">{{ l.lv }}</span></td>
+                    <td style="font-size:12.5px;">{{ l.mod }}</td>
+                    <td style="font-size:13px;">{{ l.msg }}</td>
+                  </tr>
+                </sc-for>
+              </tbody>
+            </table>
+          </div>
+          <div style="border:1px solid var(--color-divider); border-radius:var(--radius-md); padding:16px;">
+            <div style="font-size:10px; letter-spacing:0.14em; color:var(--color-accent); margin-bottom:12px;">本地资源</div>
+            <sc-for list="{{ resources }}" as="r" hint-placeholder-count="4">
+              <div style="margin-bottom:12px;">
+                <div style="display:flex; justify-content:space-between; font-size:12px; margin-bottom:5px;">
+                  <span>{{ r.name }}</span><span style="font-variant-numeric:tabular-nums; color:color-mix(in srgb, var(--color-text) 55%, transparent);">{{ r.val }}</span>
+                </div>
+                <div style="height:3px; background:var(--color-neutral-300); border-radius:2px; overflow:hidden;"><div style="{{ r.barStyle }}"></div></div>
+              </div>
+            </sc-for>
+            <hr class="hr">
+            <div style="font-size:12.5px; line-height:1.85; color:color-mix(in srgb, var(--color-text) 65%, transparent);">Flux.2 与 Hailuo 均为本地部署，素材不出内网。单章 42 片段预计 3 小时 40 分完成。</div>
+          </div>
+        </div>
+      </sc-if>
+
+      <!-- ═══ 本地模型 · 服务 ═══ -->
+      <sc-if value="{{ isModels }}" hint-placeholder-val="{{ false }}">
+        <div style="display:grid; grid-template-columns:minmax(0,1fr) 300px; gap:24px; align-items:start;">
+          <div>
+            <p style="margin:0 0 18px; font-size:13px; line-height:1.9; color:color-mix(in srgb, var(--color-text) 68%, transparent); max-width:720px; text-align:justify;">硬件为单张 RTX 4090 24GB，三类重模型放不下并行，因此按时间片调度：同一时刻只有一档占卡，切档时先释放显存。轻量服务（检索、旁白、对齐）常驻 CPU，全程不参与抢占。一章的顺序是 A 写剧本 → B 出图 → C 出片，各跑一轮。</p>
+            <table class="table">
+              <thead>
+                <tr>
+                  <th style="width:46px;">类别</th>
+                  <th style="width:132px;">用途</th>
+                  <th style="width:150px;">模型</th>
+                  <th style="min-width:260px;">为什么要它</th>
+                  <th style="width:78px;">显存</th>
+                  <th style="width:96px;">服务</th>
+                  <th style="width:68px;">状态</th>
+                </tr>
+              </thead>
+              <tbody>
+                <sc-for list="{{ models }}" as="m" hint-placeholder-count="13">
+                  <tr>
+                    <td style="font-size:12px; color:var(--color-accent-700);">{{ m.g }}</td>
+                    <td style="font-size:13px;">{{ m.role }}</td>
+                    <td style="font-size:13px; font-family:'Cormorant Garamond','Noto Serif SC',serif; font-size:15px;">{{ m.name }}</td>
+                    <td style="font-size:12.5px; line-height:1.75; color:color-mix(in srgb, var(--color-text) 72%, transparent);">{{ m.why }}</td>
+                    <td style="font-size:12.5px; font-variant-numeric:tabular-nums;">{{ m.vram }}</td>
+                    <td style="font-size:12px; font-variant-numeric:tabular-nums; color:color-mix(in srgb, var(--color-text) 60%, transparent);">{{ m.svc }}</td>
+                    <td><span style="{{ m.stateStyle }}">{{ m.state }}</span></td>
+                  </tr>
+                </sc-for>
+              </tbody>
+            </table>
+          </div>
+
+          <div style="display:flex; flex-direction:column; gap:18px;">
+            <div style="border:1px solid var(--color-divider); border-radius:var(--radius-md); padding:16px;">
+              <div style="font-size:10px; letter-spacing:0.14em; color:var(--color-accent); margin-bottom:12px;">显存分配</div>
+              <sc-for list="{{ gpuPlan }}" as="g" hint-placeholder-count="3">
+                <div style="margin-bottom:13px;">
+                  <div style="font-size:12px; margin-bottom:4px;">{{ g.name }}</div>
+                  <div style="font-size:11px; color:color-mix(in srgb, var(--color-text) 55%, transparent); margin-bottom:5px;">{{ g.val }}</div>
+                  <div style="height:3px; background:var(--color-neutral-300); border-radius:2px; overflow:hidden;"><div style="{{ g.barStyle }}"></div></div>
+                </div>
+              </sc-for>
+              <div style="font-size:11.5px; line-height:1.85; color:color-mix(in srgb, var(--color-text) 60%, transparent); margin-top:4px;">视频与图像抢显存，建议分卡：出图与出片错峰调度，或给 Flux.2 单独一张 4090。</div>
+            </div>
+
+            <div style="border:1px solid var(--color-divider); border-radius:var(--radius-md); padding:16px;">
+              <div style="font-size:10px; letter-spacing:0.14em; color:var(--color-accent); margin-bottom:10px;">4090 上的四个取舍</div>
+              <div style="font-size:12.5px; line-height:1.95; color:color-mix(in srgb, var(--color-text) 75%, transparent); text-align:justify;">一、权重必须量化：27B 的 BF16 是 56GB，只能上 AWQ 4bit 或 GGUF Q4_K_M。<br>二、上下文限到 32K：262K 原生上下文的 KV cache 在 24GB 上放不下，改成按章送入，靠检索库补跨章设定。<br>三、思考模式要收着用：<em>reasoning_effort</em> 只在改写剧本时给 xhigh，批量切片与写 prompt 用 low。<br>四、视频降规格：720×1280 出片，成片前用 Real-ESRGAN 统一超分到 1080×1920。</div>
+              <hr class="hr">
+              <div style="font-size:10px; letter-spacing:0.14em; color:var(--color-accent); margin-bottom:8px;">一章的实测节奏</div>
+              <div style="font-size:12.5px; line-height:1.95; color:color-mix(in srgb, var(--color-text) 75%, transparent);">档位 A 写完 42 段分镜约 12 分钟；档位 B 出 12 张参考图约 12 分钟；档位 C 出 42 段 10 秒片段是大头，通宵量级。建议按场次分批过夜跑。</div>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+
+      <!-- ═══ 项目列表 ═══ -->
+      <sc-if value="{{ isProjects }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex; align-items:center; gap:12px; margin-bottom:20px;">
+          <p style="margin:0; font-size:13px; color:color-mix(in srgb, var(--color-text) 65%, transparent);">共 4 个工程</p>
+          <div style="flex:1;"></div>
+          <button class="btn btn-secondary">导入工程</button>
+          <button class="btn btn-primary">新建工程</button>
+        </div>
+        <div style="display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:20px;">
+          <sc-for list="{{ projects }}" as="p" hint-placeholder-count="4">
+            <div class="card" style="background:var(--color-neutral-100); gap:0; padding:18px;">
+              <div style="font-size:10px; letter-spacing:0.12em; color:var(--color-accent);">{{ p.kicker }}</div>
+              <div style="font-family:'Cormorant Garamond','Noto Serif SC',serif; font-size:22px; margin-top:6px;">{{ p.title }}</div>
+              <div style="font-size:12px; line-height:1.8; color:color-mix(in srgb, var(--color-text) 65%, transparent); margin-top:8px; min-height:44px;">{{ p.desc }}</div>
+              <hr class="hr" style="margin:14px 0 10px;">
+              <div style="display:flex; justify-content:space-between; font-size:11px; color:color-mix(in srgb, var(--color-text) 55%, transparent); font-variant-numeric:tabular-nums;">
+                <span>{{ p.progress }}</span><span>{{ p.updated }}</span>
+              </div>
+              <div style="height:3px; background:var(--color-neutral-300); border-radius:2px; overflow:hidden; margin-top:8px;"><div style="{{ p.barStyle }}"></div></div>
+            </div>
+          </sc-for>
+        </div>
+      </sc-if>
+
+    </main>
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;segmentSeconds&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:10,&quot;tsType&quot;:&quot;number&quot;,&quot;min&quot;:4,&quot;max&quot;:20,&quot;unit&quot;:&quot;秒&quot;,&quot;section&quot;:&quot;生成参数&quot;},&quot;styleLock&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;生成参数&quot;}}">
+const NAV = [
+  { label: "项目", items: [["projects", "项目列表"], ["import", "小说导入 · 章节切分"]] },
+  { label: "资料库", items: [["characters", "人物资料库"], ["scenes", "场景资料库"], ["style", "风格预设"]] },
+  { label: "制作", items: [["script", "剧本 · 分镜"], ["prompt", "Prompt 面板"], ["queue", "生成队列"]] },
+  { label: "输出", items: [["timeline", "成片时间线"], ["logs", "任务日志"]] },
+  { label: "部署", items: [["models", "本地模型 · 服务"]] }
+];
+
+const TITLES = {
+  projects: ["工作台", "项目列表"],
+  import: ["步骤一", "小说导入 · 章节切分"],
+  characters: ["步骤二", "人物资料库 · 白板图"],
+  scenes: ["步骤二", "场景参考图库"],
+  style: ["全局", "风格预设"],
+  script: ["步骤三", "剧本与分镜 · 运镜设计"],
+  prompt: ["步骤四", "Prompt 面板 · Flux.2 / Hailuo"],
+  queue: ["步骤五", "视频片段生成队列"],
+  timeline: ["步骤六", "成片预览与拼接"],
+  logs: ["监控", "任务状态与日志"],
+  models: ["部署", "本地模型与服务"]
+};
+
+const MODELS = [
+  { g: "语言", role: "剧本改写 · 分镜 · Prompt 生成", name: "Qwen3.8-27B · AWQ 4bit", why: "主脑。BF16 要 56GB，4090 上只能用量化权重；上下文限到 32K，整卷长上下文改为分章送入。", vram: "约 20 GB", svc: "档位 A · :8000", state: "档位 A" },
+  { g: "视觉", role: "出图审核 · 片段一致性打分", name: "Qwen3.8-27B（同一份权重）", why: "它本身就是原生视觉语言模型，图和视频都能读，审白板图与首尾帧连贯性不必再起第二个 VLM。", vram: "复用", svc: "同上 · 视觉入口", state: "档位 A" },
+  { g: "语言", role: "人物抽取 · 别名归并 · 章节切分", name: "Qwen3-8B · AWQ", why: "24GB 上装不下两个 LLM 并存；作为 27B 的替补档，赶进度时用它跑批量琐事。", vram: "约 6 GB", svc: "备选 · :8000", state: "备选" },
+  { g: "语言", role: "设定库检索（跨章节一致性）", name: "Qwen3-Embedding-0.6B + bge-reranker-v2-m3", why: "0.6B 放 CPU 跑，一次检索几十毫秒，把显存全留给重模型。", vram: "0（CPU）", svc: "常驻 · :8002", state: "常驻" },
+  { g: "图像", role: "人物白板图 · 场景参考图", name: "Flux.2 · fp8_e4m3fn", why: "fp16 在 24GB 上 OOM，必须 fp8 权重加 --lowvram；1080×1920 / 28 步单张约 40-70 秒。", vram: "约 18 GB", svc: "档位 B · :7860", state: "档位 B" },
+  { g: "图像", role: "人物一致性", name: "PuLID / InstantID + IP-Adapter", why: "锁 seed 还不够，跨章节换姿势换服装时靠它保住同一张脸。", vram: "+2 GB", svc: "ComfyUI 节点", state: "待部署" },
+  { g: "图像", role: "构图控制", name: "ControlNet · depth / openpose", why: "分镜的景别与人物站位要可控，不能每次重掷骰子。", vram: "+2 GB", svc: "ComfyUI 节点", state: "待部署" },
+  { g: "视频", role: "片段生成", name: "MiniMax Hailuo · 720×1280", why: "24GB 出不了 1080×1920 十秒；先出 720×1280，成片前统一超分。开 offload 与 VAE tiling。", vram: "约 22 GB", svc: "档位 C · :9000", state: "档位 C" },
+  { g: "视频", role: "超分到 1080×1920", name: "Real-ESRGAN（视频逐帧）", why: "把 720p 片段补到出片规格，比让视频模型直出 1080p 省一半显存和时间。", vram: "3 GB", svc: "CLI · 出片后跑", state: "待部署" },
+  { g: "视频", role: "补帧 · 变速", name: "RIFE", why: "25fps 补到 50fps 或做慢镜头，比重跑视频模型便宜得多。", vram: "2 GB", svc: "CLI", state: "可选" },
+  { g: "语音", role: "旁白 / 台词配音", name: "CosyVoice 2 · 0.5B", why: "中文多音字与情感最稳，支持音色克隆固定一把评书腔；0.5B 放 CPU 也能跑。", vram: "0（CPU）", svc: "常驻 · :9100", state: "常驻" },
+  { g: "语音", role: "时间轴对齐 · 字幕", name: "FunASR Paraformer", why: "把旁白音频对齐到片段时间线，自动出字幕与卡点；CPU 足够。", vram: "0（CPU）", svc: "常驻 · :9101", state: "常驻" },
+  { g: "音频", role: "配乐 · 音效", name: "ACE-Step / AudioGen", why: "古琴底乐与剑鸣、衣袂等环境音；显存紧张就改用素材库。", vram: "8 GB", svc: "按需 · :9102", state: "可选" }
+];
+
+class Component extends DCLogic {
+  state = { view: "import" };
+
+  go(v) { return () => this.setState({ view: v }); }
+
+  renderVals() {
+    const view = this.state.view;
+    const secs = this.props.segmentSeconds ?? 10;
+    const lock = this.props.styleLock ?? true;
+    let n = 0;
+    const navGroups = NAV.map(g => ({
+      label: g.label,
+      items: g.items.map(([key, label]) => {
+        n += 1;
+        const on = key === view;
+        return {
+          key, label, num: String(n).padStart(2, "0"),
+          onClick: this.go(key),
+          style: "display:flex; align-items:center; gap:9px; padding:7px 18px; cursor:pointer; font-size:13.5px; border-left:2px solid " +
+            (on ? "var(--color-accent)" : "transparent") + "; background:" + (on ? "var(--color-accent-100)" : "transparent") +
+            "; color:" + (on ? "var(--color-accent-800)" : "color-mix(in srgb, var(--color-text) 72%, transparent)") + ";"
+        };
+      })
+    }));
+
+    const rowStyle = on => "display:flex; align-items:center; gap:9px; padding:8px 14px; cursor:pointer; font-size:13px; border-top:1px solid var(--color-divider); background:" +
+      (on ? "var(--color-accent-100)" : "transparent") + "; color:" + (on ? "var(--color-accent-800)" : "inherit") + ";";
+
+    const bar = (pct, color) => "width:" + pct + "%; height:100%; background:" + color + ";";
+
+    const chapters = [
+      ["01", "青衫磊落险峰行", "5 842"], ["02", "玉壁月华明", "6 130"], ["03", "马疾香幽", "5 460"],
+      ["04", "崖高人远", "6 002"], ["05", "微步縠纹生", "5 774"], ["06", "谁家子弟谁家院", "6 218"]
+    ].map(([num, title, words], i) => ({ num, title, words, style: rowStyle(i === 0) }));
+
+    const characters = [
+      { name: "段誉", role: "主角", slot: "c-duanyu", slotHint: "段誉 · 9:16 白板图", look: "二十上下，青布长衫，眉目清朗略带稚气，腰悬折扇，身形挺拔无武人筋骨。", traits: ["温厚", "执拗", "不通武学", "好辩佛理"], seed: "8842193", status: "已定妆" },
+      { name: "钟灵", role: "次要", slot: "c-zhongling", slotHint: "钟灵 · 9:16 白板图", look: "十六七岁，鹅黄衫子，双丫髻，眉眼灵动含笑，怀抱小貂。", traits: ["娇憨", "机灵", "使小性"], seed: "1140277", status: "待审" },
+      { name: "左子穆", role: "配角", slot: "c-zuozimu", slotHint: "左子穆 · 9:16 白板图", look: "五十余岁，玄色道袍，长须及胸，鹰目微眯，腰背挺直。", traits: ["自负", "城府", "护短"], seed: "5528014", status: "已定妆" },
+      { name: "辛双清", role: "配角", slot: "c-xinshuangqing", slotHint: "辛双清 · 9:16 白板图", look: "四十许，青灰道姑袍，面色铁青，薄唇紧抿，鬓发一丝不乱。", traits: ["冷峻", "寡言", "隐忍"], seed: "3390865", status: "已定妆" },
+      { name: "龚光杰", role: "配角", slot: "c-gongguangjie", slotHint: "龚光杰 · 9:16 白板图", look: "十八九岁，短打劲装，眉峰上扬，右手青钢剑，步势前倾。", traits: ["好胜", "张扬", "少年气"], seed: "7761230", status: "待审" },
+      { name: "干光豪", role: "配角", slot: "c-ganguanghao", slotHint: "干光豪 · 9:16 白板图", look: "中年，褐衣扎袖，虬髯浓眉，肩背厚实，握剑手背青筋。", traits: ["沉稳", "悍勇"], seed: "2205498", status: "已定妆" }
+    ];
+
+    const traitMap = [
+      { trait: "温厚", face: "眉眼舒展，眼角微垂，嘴角常有一分笑意" },
+      { trait: "执拗", face: "下颌线偏方，眉头习惯性微聚" },
+      { trait: "不通武学", face: "肩颈松弛，手无老茧，长衫下摆无束" },
+      { trait: "好辩佛理", face: "目光清亮直视，手常拈袖口如捻念珠" }
+    ];
+
+    const scenes = [
+      { name: "无量剑练武厅", when: "内景 · 日", slot: "s-hall", slotHint: "练武厅", desc: "梁上悬匾，青砖漫地，东西两列座椅相对，高窗斜光落入，尘埃可见。", light: "高窗侧逆光", lens: "35mm", uses: "引用 12 片段" },
+      { name: "剑湖宫外石阶", when: "外景 · 晨雾", slot: "s-steps", slotHint: "剑湖宫", desc: "百级青石阶自雾中升起，两侧古松，宫门匾额半隐。", light: "低照度雾光", lens: "24mm", uses: "引用 6 片段" },
+      { name: "无量山松林道", when: "外景 · 午后", slot: "s-forest", slotHint: "松林山道", desc: "斜光穿林，针叶铺地，山道曲折向上，远处峰影层叠。", light: "斜射硬光", lens: "50mm", uses: "引用 8 片段" },
+      { name: "玉虚洞石壁", when: "内景 · 幽暗", slot: "s-cave", slotHint: "玉虚洞", desc: "水光自洞底反照上壁，石纹湿润，深处一线天光。", light: "水面反射光", lens: "35mm", uses: "引用 5 片段" },
+      { name: "万劫谷谷口", when: "外景 · 阴天", slot: "s-valley", slotHint: "万劫谷", desc: "两崖夹峙，藤蔓垂落，谷底薄雾滞留，光线平散。", light: "阴天散射", lens: "24mm", uses: "引用 7 片段" },
+      { name: "客栈夜谈", when: "内景 · 夜", slot: "s-inn", slotHint: "客栈夜景", desc: "油灯一盏，木桌粗瓷，窗纸透月，人影投在土墙上。", light: "单点暖光", lens: "50mm", uses: "引用 4 片段" }
+    ];
+
+    const styleNames = [
+      ["写实电影感", "35mm 胶片质感，浅景深，暖调 LUT"],
+      ["水墨国风", "留白、皴擦，墨色浓淡代替明暗"],
+      ["日式动画", "赛璐璐平涂，硬边阴影，高饱和"],
+      ["油画质感", "厚涂笔触，暖褐底色，边缘柔化"],
+      ["黑白连环画", "钢笔线描，网点排线，高对比"],
+      ["民国老照片", "银盐颗粒，褪色青灰，边角晕影"],
+      ["金庸插图风", "工笔线条加淡彩，人物为主，背景简"],
+      ["吉卜力风", "柔和水彩天空，自然光，细节丰富"]
+    ];
+    const styles = styleNames.map(([name, desc], i) => ({
+      name, desc, slot: "sty-" + i,
+      cardStyle: "border:1px solid " + (i === 0 ? "var(--color-accent)" : "var(--color-divider)") +
+        "; border-radius:var(--radius-md); overflow:hidden; cursor:pointer; background:" + (i === 0 ? "var(--color-accent-100)" : "var(--color-neutral-100)") + ";",
+      mark: i === 0 ? "已选用" : (i === 1 ? "已试样" : ""),
+      markStyle: "font-size:10px; letter-spacing:0.08em; color:" + (i === 0 ? "var(--color-accent-800)" : "color-mix(in srgb, var(--color-text) 45%, transparent)") + ";"
+    }));
+
+    const sceneTree = [
+      ["01", "练武厅比剑", "6"], ["02", "段誉失笑", "4"], ["03", "厅外追叙", "5"],
+      ["04", "松林遇钟灵", "9"], ["05", "剑湖宫夜宴", "7"]
+    ].map(([num, title, count], i) => ({ num, title, count, style: rowStyle(i === 0) }));
+
+    const d = String(secs) + "s";
+    const shots = [
+      { num: "01", dur: d, move: "推 Push in", size: "中景 → 特写", trans: "硬切", desc: "青光一闪，青钢剑倏地刺出，剑尖直指中年汉子左肩。少年腕抖剑斜，剑锋改削右颈。", line: "音效：剑鸣一声，衣袂破风。", meta: "首帧 scene-01 · seed 锁定 · 运动强度 0.62" },
+      { num: "02", dur: d, move: "摇 Pan", size: "近景", trans: "硬切", desc: "双剑相击，铮然一响，火星迸溅，嗡嗡余音未绝，镜头随剑锋横摇。", line: "旁白：震声未绝，双刃剑光霍霍，已拆了三招。", meta: "首帧续接 01 末帧 · 运动强度 0.70" },
+      { num: "03", dur: d, move: "环绕 Arc", size: "中景 → 中近景", trans: "硬切", desc: "两人全力相搏，剑影交错，木地板扬起细尘；镜头以二人为轴顺时针环绕三十度。", line: "旁白：两人剑法迅捷，全力相搏。", meta: "首帧 scene-01 · 尾帧续接 · 运动强度 0.55" },
+      { num: "04", dur: d, move: "固定 + 微推", size: "中近景", trans: "叠化", desc: "切至厅东上首，中年道姑铁青着脸，嘴唇紧闭，身后弟子屏息。", line: "旁白：上首是个四十左右的中年道姑。", meta: "首帧 char-辛双清 + scene-01 · 运动强度 0.25" },
+      { num: "05", dur: d, move: "移 Tracking", size: "中景", trans: "硬切", desc: "横移至下首老者，右手捻须，眼角带笑，神情甚是得意。", line: "旁白：神情甚是得意。", meta: "首帧 char-左子穆 · 运动强度 0.35" },
+      { num: "06", dur: d, move: "拉 Pull out", size: "特写 → 全景", trans: "黑场", desc: "西边宾客中青衫年轻男子忍不住嗤地一笑，随即掩口；镜头后拉，满厅目光聚来。", line: "旁白：他随即知道失态，忙伸手按住了口。", meta: "首帧 char-段誉 · 落幅全景 · 运动强度 0.48" }
+    ];
+
+    const injects = [
+      { k: "风格", v: "写实电影感 · Kodak 2383 暖调 · 35mm 细颗粒" + (lock ? "（全项目锁定）" : "（未锁定）") },
+      { k: "画幅", v: "9:16 竖构图，1080 × 1920，无字幕无水印" },
+      { k: "一致性", v: "人物 seed + LoRA 锁定；场景色温 3200K；相邻片段末帧续接" },
+      { k: "负向", v: "多手多指 / 面部畸变 / 现代服饰 / 广角畸变 / 塑料感" }
+    ];
+
+    const queueStats = [
+      { n: "27", label: "已完成", color: "var(--color-text)" },
+      { n: "3", label: "渲染中", color: "var(--color-accent-700)" },
+      { n: "11", label: "等待中", color: "var(--color-text)" },
+      { n: "1", label: "失败", color: "var(--color-accent-900)" }
+    ];
+
+    const queue = [
+      ["S01-03", "练武厅比剑", "环绕 · 剑影交错", "渲染中 62%", 62, "04:12", "查看"],
+      ["S01-04", "练武厅比剑", "微推 · 道姑铁青着脸", "渲染中 28%", 28, "01:50", "查看"],
+      ["S01-05", "练武厅比剑", "横移 · 老者捻须", "渲染中 9%", 9, "00:34", "查看"],
+      ["S01-06", "练武厅比剑", "后拉 · 段誉失笑", "等待中", 0, "—", "置顶"],
+      ["S02-01", "段誉失笑", "特写 · 掩口", "等待中", 0, "—", "置顶"],
+      ["S02-02", "段誉失笑", "反打 · 满堂侧目", "首帧偏色，已重试 1 次", 100, "06:41", "重试"],
+      ["S01-01", "练武厅比剑", "推镜 · 青钢剑刺出", "已完成", 100, "05:08", "预览"],
+      ["S01-02", "练武厅比剑", "横摇 · 双剑相击", "已完成", 100, "05:22", "预览"]
+    ].map(([id, scene, desc, state, pct, time, action]) => {
+      const err = state.indexOf("偏色") >= 0;
+      const done = state.indexOf("已完成") >= 0;
+      const color = err ? "var(--color-accent-900)" : (done ? "color-mix(in srgb, var(--color-text) 55%, transparent)" : "var(--color-accent-700)");
+      const fill = err ? "var(--color-neutral-500)" : (done ? "var(--color-neutral-400)" : "var(--color-accent)");
+      return { id, scene, desc, dur: d, state, time, action, color, barStyle: bar(pct, fill) };
+    });
+
+    const tlClips = shots.concat(shots.slice(0, 3)).map((s, i) => ({
+      id: String(i + 1).padStart(2, "0"),
+      move: s.move,
+      style: "width:82px; flex:none; border:1px solid " + (i === 2 ? "var(--color-accent)" : "var(--color-divider)") +
+        "; border-radius:var(--radius-sm); overflow:hidden; background:var(--color-neutral-100);"
+    }));
+
+    const tracks = [
+      { name: "旁白", label: "评书腔旁白 · 42 段", blockStyle: "width:100%; background:var(--color-accent-100); color:var(--color-accent-800); font-size:10.5px; display:flex; align-items:center; padding:0 8px;" },
+      { name: "配乐", label: "古琴 + 低弦 · 循环", blockStyle: "width:86%; background:var(--color-neutral-200); color:var(--color-neutral-800); font-size:10.5px; display:flex; align-items:center; padding:0 8px;" },
+      { name: "音效", label: "剑鸣 / 衣袂 / 环境", blockStyle: "width:62%; background:var(--color-neutral-200); color:var(--color-neutral-800); font-size:10.5px; display:flex; align-items:center; padding:0 8px;" }
+    ];
+
+    const lvStyle = lv => "font-size:10.5px; padding:2px 7px; border-radius:3px; white-space:nowrap; display:inline-block; background:" +
+      (lv === "错误" ? "var(--color-accent-200)" : lv === "警告" ? "var(--color-accent-100)" : "var(--color-neutral-100)") +
+      "; color:" + (lv === "错误" ? "var(--color-accent-900)" : lv === "警告" ? "var(--color-accent-800)" : "var(--color-neutral-800)") + ";";
+
+    const logs = [
+      ["14:02:11", "信息", "章节切分", "识别到 50 章，第一章 5 842 字，切为 42 个 " + secs + " 秒片段。"],
+      ["14:03:40", "信息", "人物抽取", "抽取 6 名人物，别名归并 4 组（青衫年轻男子 → 段誉）。"],
+      ["14:05:02", "信息", "Flux.2", "段誉白板图 4 张候选生成完毕，用时 38s。"],
+      ["14:07:26", "警告", "Flux.2", "钟灵候选图性格标签「娇憨」与容貌一致性评分 0.71，低于阈值 0.80。"],
+      ["14:11:09", "信息", "剧本生成", "场次 01 转写完成，自动插入运镜 6 处：推 / 摇 / 环绕 / 微推 / 移 / 拉。"],
+      ["14:18:33", "信息", "Hailuo", "S01-01 渲染完成 1080×1920 · 25fps，用时 5m08s。"],
+      ["14:24:57", "警告", "一致性检测", "S01-04 与 S01-03 色温偏差 0.09，已自动套用场景 LUT。"],
+      ["14:31:12", "错误", "Hailuo", "S02-02 首帧偏色，任务中断；已按锁定 seed 重新提交。"],
+      ["14:33:48", "信息", "队列", "并发上调至 3，预计剩余 3h40m。"]
+    ].map(([t, lv, mod, msg]) => ({ t, lv, mod, msg, lvStyle: lvStyle(lv) }));
+
+    const resources = [
+      { name: "GPU 0 · A100", val: "81%", barStyle: bar(81, "var(--color-accent)") },
+      { name: "GPU 1 · A100", val: "74%", barStyle: bar(74, "var(--color-accent)") },
+      { name: "显存", val: "62 / 80 GB", barStyle: bar(78, "var(--color-neutral-500)") },
+      { name: "素材盘", val: "412 GB 可用", barStyle: bar(46, "var(--color-neutral-500)") }
+    ];
+
+    const projects = [
+      { kicker: "武侠 · 连载", title: "天龙八部", desc: "第一卷 50 章，先做前 6 章样片，竖屏短剧发行。", progress: "42 / 420 片段", updated: "10 分钟前", barStyle: bar(10, "var(--color-accent)") },
+      { kicker: "科幻", title: "三体 · 序章", desc: "科学边界与古筝行动两段，写实电影感。", progress: "128 / 260 片段", updated: "昨天", barStyle: bar(49, "var(--color-accent)") },
+      { kicker: "民国 · 短篇", title: "边城旧事", desc: "民国老照片风格测试，10 分钟成片。", progress: "60 / 60 片段", updated: "3 天前", barStyle: bar(100, "var(--color-neutral-500)") },
+      { kicker: "试验", title: "水墨风格测试", desc: "同一段落跑 8 种风格预设做对比。", progress: "8 / 8 片段", updated: "上周", barStyle: bar(100, "var(--color-neutral-500)") }
+    ];
+
+    const stateStyle = s => "font-size:10.5px; padding:2px 8px; border-radius:3px; white-space:nowrap; display:inline-block; background:" +
+      (s === "运行中" ? "var(--color-accent-100)" : "var(--color-neutral-100)") + "; color:" +
+      (s === "运行中" ? "var(--color-accent-800)" : s === "待部署" ? "var(--color-neutral-800)" : "var(--color-neutral-600)") + ";";
+    const models = MODELS.map(m => Object.assign({}, m, { stateStyle: stateStyle(m.state) }));
+
+    const gpuPlan = [
+      { name: "档位 A · 文本", val: "Qwen3.8-27B AWQ 20 GB / 24 GB", barStyle: bar(83, "var(--color-accent)") },
+      { name: "档位 B · 出图", val: "Flux.2 fp8 18 GB / 24 GB", barStyle: bar(75, "var(--color-accent)") },
+      { name: "档位 C · 出片", val: "Hailuo 720×1280 22 GB / 24 GB", barStyle: bar(92, "var(--color-accent)") },
+      { name: "常驻 · CPU", val: "检索 · 旁白 · 对齐，0 显存", barStyle: bar(18, "var(--color-neutral-500)") }
+    ];
+
+    const t = TITLES[view];
+    return {
+      models, gpuPlan, isModels: view === "models",
+      navGroups, viewKicker: t[0], viewTitle: t[1], segLabel: secs + " 秒",
+      isProjects: view === "projects", isImport: view === "import", isCharacters: view === "characters",
+      isScenes: view === "scenes", isStyle: view === "style", isScript: view === "script",
+      isPrompt: view === "prompt", isQueue: view === "queue", isTimeline: view === "timeline", isLogs: view === "logs",
+      chapters, extracts: [
+        { label: "人物", count: "6" }, { label: "场景", count: "4" },
+        { label: "对白", count: "11" }, { label: "动作段落", count: "23" }
+      ],
+      characters, traitMap, scenes, styles, sceneTree, shots, injects,
+      queueStats, queue, tlClips, tracks, logs, resources, projects
+    };
+  }
+}
+
+</script>
+</body>
+</html>

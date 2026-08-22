@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/classical-d362d489-8175-478e-8156-5e2f8f43f744/styles.css">
+<script src="_ds/classical-d362d489-8175-478e-8156-5e2f8f43f744/_ds_bundle.js"></script>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@300;400;500;600&display=swap">
+<style>
+  body { margin:0; font-family:"Lora","Noto Serif SC",serif; }
+  h1,h2,h3,h4,h5,h6 { font-family:"Cormorant Garamond","Noto Serif SC",serif; }
+  a { color: var(--color-accent); text-decoration:none; }
+  a:hover { color: var(--color-accent-700); text-decoration:underline; }
+  .btn, .tag, .seg-opt, .seg { white-space:nowrap; flex:none; }
+  ::-webkit-scrollbar { width:10px; height:10px; }
+  ::-webkit-scrollbar-thumb { background: var(--color-neutral-300); border-radius:6px; }
+</style>
+</helmet>
+
+<div style="min-height:100vh; min-width:1280px; background:var(--color-bg); color:var(--color-text); font-family:'Lora','Noto Serif SC',serif; font-size:14px;">
+
+  <header style="display:flex; align-items:center; gap:18px; padding:16px 26px; border-bottom:1px solid var(--color-divider);">
+    <div style="flex:1;">
+      <div style="font-size:11px; letter-spacing:0.16em; color:var(--color-accent);">书影 BOOKREEL · 本地流水线</div>
+      <h3 style="margin:2px 0 0; font-size:24px;">网页控制台 — 小说直出视频</h3>
+    </div>
+    <span style="{{ healthStyle }}">{{ healthLabel }}</span>
+    <button class="btn btn-secondary" onClick="{{ checkHealth }}">检测服务</button>
+    <button class="btn btn-primary" onClick="{{ runAll }}">{{ runAllLabel }}</button>
+    <a class="btn btn-ghost" href="Novel to Video Studio.dc.html">返回工作台</a>
+  </header>
+
+  <div style="display:grid; grid-template-columns:330px minmax(0,1fr) 320px; gap:22px; padding:22px 26px 40px; align-items:start;">
+
+    <!-- 输入 -->
+    <div style="display:flex; flex-direction:column; gap:16px;">
+      <div style="border:1px solid var(--color-divider); border-radius:var(--radius-md); padding:14px;">
+        <div style="font-size:10px; letter-spacing:0.14em; color:var(--color-accent); margin-bottom:10px;">原文</div>
+        <textarea class="input" style="min-height:260px; line-height:1.9; font-size:13px;" value="{{ novel }}" onChange="{{ setNovel }}"></textarea>
+        <div style="font-size:11px; color:color-mix(in srgb, var(--color-text) 50%, transparent); margin-top:6px; font-variant-numeric:tabular-nums;">{{ novelStat }}</div>
+      </div>
+      <div style="border:1px solid var(--color-divider); border-radius:var(--radius-md); padding:14px;">
+        <div style="font-size:10px; letter-spacing:0.14em; color:var(--color-accent); margin-bottom:10px;">参数</div>
+        <div class="field" style="margin-bottom:10px;"><label>画面风格</label><input class="input" value="{{ style }}" onChange="{{ setStyle }}"></div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+          <div class="field"><label>单段秒数</label><input class="input" value="{{ secs }}" onChange="{{ setSecs }}"></div>
+          <div class="field"><label>最多片段</label><input class="input" value="{{ maxShots }}" onChange="{{ setMaxShots }}"></div>
+        </div>
+        <div class="field" style="margin-top:10px;"><label>画幅</label><input class="input" value="1080 × 1920 · 9:16"></div>
+      </div>
+    </div>
+
+    <!-- 流水线 -->
+    <div style="display:flex; flex-direction:column; gap:16px;">
+
+      <div style="border:1px solid var(--color-divider); border-radius:var(--radius-md); padding:16px 18px; background:var(--color-neutral-100);">
+        <div style="display:flex; align-items:center; gap:12px;">
+          <span style="font-family:'Cormorant Garamond',serif; font-size:26px; color:var(--color-accent); line-height:1;">01</span>
+          <h4 style="margin:0; font-size:19px; flex:1;">抽取人物与场景</h4>
+          <span style="{{ s1Style }}">{{ s1State }}</span>
+          <button class="btn btn-secondary" onClick="{{ runExtract }}">运行</button>
+        </div>
+        <div style="font-size:12px; color:color-mix(in srgb, var(--color-text) 55%, transparent); margin-top:6px;">Qwen3.8-27B · 输出人物性格与容貌、场景与光线，JSON 写入资料库</div>
+        <sc-if value="{{ hasChars }}" hint-placeholder-val="{{ false }}">
+          <div style="margin-top:12px; display:flex; flex-direction:column; gap:8px;">
+            <sc-for list="{{ chars }}" as="c" hint-placeholder-count="3">
+              <div style="display:grid; grid-template-columns:74px 1fr; gap:12px; padding-top:8px; border-top:1px solid var(--color-divider); font-size:12.5px;">
+                <span style="font-family:'Cormorant Garamond','Noto Serif SC',serif; font-size:16px;">{{ c.name }}</span>
+                <span style="line-height:1.75; color:color-mix(in srgb, var(--color-text) 75%, transparent);">{{ c.line }}</span>
+              </div>
+            </sc-for>
+            <sc-for list="{{ scenesOut }}" as="s" hint-placeholder-count="2">
+              <div style="display:grid; grid-template-columns:74px 1fr; gap:12px; padding-top:8px; border-top:1px solid var(--color-divider); font-size:12.5px;">
+                <span style="color:var(--color-accent-700);">{{ s.name }}</span>
+                <span style="line-height:1.75; color:color-mix(in srgb, var(--color-text) 75%, transparent);">{{ s.line }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+      </div>
+
+      <div style="border:1px solid var(--color-divider); border-radius:var(--radius-md); padding:16px 18px; background:var(--color-neutral-100);">
+        <div style="display:flex; align-items:center; gap:12px;">
+          <span style="font-family:'Cormorant Garamond',serif; font-size:26px; color:var(--color-accent); line-height:1;">02</span>
+          <h4 style="margin:0; font-size:19px; flex:1;">转剧本 · 切片段 · 写运镜</h4>
+          <span style="{{ s2Style }}">{{ s2State }}</span>
+          <button class="btn btn-secondary" onClick="{{ runScript }}">运行</button>
+        </div>
+        <div style="font-size:12px; color:color-mix(in srgb, var(--color-text) 55%, transparent); margin-top:6px;">每段 {{ secs }} 秒，自动补运镜与转场，并生成图像 / 视频两套 prompt</div>
+        <sc-if value="{{ hasShots }}" hint-placeholder-val="{{ false }}">
+          <div style="margin-top:12px;">
+            <sc-for list="{{ shots }}" as="s" hint-placeholder-count="4">
+              <div style="display:grid; grid-template-columns:34px 1fr; gap:12px; padding:10px 0; border-top:1px solid var(--color-divider);">
+                <span style="font-family:'Cormorant Garamond',serif; font-size:18px; color:var(--color-accent); font-variant-numeric:tabular-nums;">{{ s.n }}</span>
+                <div>
+                  <div style="display:flex; gap:6px; margin-bottom:5px;"><span class="tag tag-outline">{{ s.move }}</span><span class="tag tag-neutral">{{ s.size }}</span></div>
+                  <div style="font-size:13px; line-height:1.8;">{{ s.desc }}</div>
+                  <div style="font-size:12px; line-height:1.75; color:var(--color-accent-700); margin-top:4px;">{{ s.narration }}</div>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+      </div>
+
+      <div style="border:1px solid var(--color-divider); border-radius:var(--radius-md); padding:16px 18px; background:var(--color-neutral-100);">
+        <div style="display:flex; align-items:center; gap:12px;">
+          <span style="font-family:'Cormorant Garamond',serif; font-size:26px; color:var(--color-accent); line-height:1;">03</span>
+          <h4 style="margin:0; font-size:19px; flex:1;">出人物白板图与场景参考图</h4>
+          <span style="{{ s3Style }}">{{ s3State }}</span>
+          <button class="btn btn-secondary" onClick="{{ runImages }}">运行</button>
+        </div>
+        <div style="font-size:12px; color:color-mix(in srgb, var(--color-text) 55%, transparent); margin-top:6px;">ComfyUI · Flux.2 · 1080×1920 · seed 按人物锁定</div>
+        <sc-if value="{{ hasImages }}" hint-placeholder-val="{{ false }}">
+          <div style="display:grid; grid-template-columns:repeat(6, minmax(0,1fr)); gap:10px; margin-top:14px;">
+            <sc-for list="{{ images }}" as="im" hint-placeholder-count="6">
+              <div>
+                <div class="plate" style="aspect-ratio:9/16; background:var(--color-neutral-200); overflow:hidden;">
+                  <img src="{{ im.url }}" alt="{{ im.name }}" style="width:100%; height:100%; object-fit:cover;">
+                </div>
+                <div style="font-size:10.5px; margin-top:4px; color:color-mix(in srgb, var(--color-text) 60%, transparent); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ im.name }}</div>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+      </div>
+
+      <div style="border:1px solid var(--color-divider); border-radius:var(--radius-md); padding:16px 18px; background:var(--color-neutral-100);">
+        <div style="display:flex; align-items:center; gap:12px;">
+          <span style="font-family:'Cormorant Garamond',serif; font-size:26px; color:var(--color-accent); line-height:1;">04</span>
+          <h4 style="margin:0; font-size:19px; flex:1;">生成视频片段</h4>
+          <span style="{{ s4Style }}">{{ s4State }}</span>
+          <button class="btn btn-secondary" onClick="{{ runVideo }}">运行</button>
+        </div>
+        <div style="font-size:12px; color:color-mix(in srgb, var(--color-text) 55%, transparent); margin-top:6px;">MiniMax Hailuo 本地服务 · 首帧取参考图，尾帧续接上一段</div>
+        <sc-if value="{{ hasClips }}" hint-placeholder-val="{{ false }}">
+          <div style="display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:12px; margin-top:14px;">
+            <sc-for list="{{ clips }}" as="c" hint-placeholder-count="4">
+              <div>
+                <div class="plate" style="aspect-ratio:9/16; background:var(--color-neutral-200); overflow:hidden; display:grid; place-items:center;">
+                  <video src="{{ c.url }}" controls="true" style="width:100%; height:100%; object-fit:cover;"></video>
+                </div>
+                <div style="font-size:10.5px; margin-top:4px; color:color-mix(in srgb, var(--color-text) 60%, transparent);">{{ c.label }}</div>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+      </div>
+
+      <div style="border:1px solid var(--color-divider); border-radius:var(--radius-md); padding:16px 18px; background:var(--color-neutral-100);">
+        <div style="display:flex; align-items:center; gap:12px;">
+          <span style="font-family:'Cormorant Garamond',serif; font-size:26px; color:var(--color-accent); line-height:1;">05</span>
+          <h4 style="margin:0; font-size:19px; flex:1;">旁白与合成</h4>
+          <span style="{{ s5Style }}">{{ s5State }}</span>
+          <button class="btn btn-secondary" onClick="{{ runFinal }}">运行</button>
+        </div>
+        <div style="font-size:12px; color:color-mix(in srgb, var(--color-text) 55%, transparent); margin-top:6px;">CosyVoice 2 配旁白，导出 ffmpeg 拼接脚本</div>
+        <sc-if value="{{ hasFinal }}" hint-placeholder-val="{{ false }}">
+          <div style="margin-top:12px;">
+            <div style="font-size:12px; line-height:1.9; font-family:ui-monospace,'Cascadia Mono',monospace; white-space:pre-wrap; border:1px solid var(--color-divider); border-radius:var(--radius-md); padding:12px; background:var(--color-bg); color:color-mix(in srgb, var(--color-text) 82%, transparent);">{{ ffmpegCmd }}</div>
+            <div style="display:flex; gap:8px; margin-top:12px;">
+              <button class="btn btn-secondary" onClick="{{ copyCmd }}">复制命令</button>
+              <button class="btn btn-primary" onClick="{{ downloadList }}">下载 concat 清单</button>
+            </div>
+          </div>
+        </sc-if>
+      </div>
+    </div>
+
+    <!-- 服务与日志 -->
+    <div style="display:flex; flex-direction:column; gap:16px;">
+      <div style="border:1px solid var(--color-divider); border-radius:var(--radius-md); padding:14px;">
+        <div style="font-size:10px; letter-spacing:0.14em; color:var(--color-accent); margin-bottom:10px;">服务端点</div>
+        <div class="field" style="margin-bottom:9px;"><label>主模型 Qwen3.8-27B</label><input class="input" value="{{ epLlm }}" onChange="{{ setEpLlm }}"></div>
+        <div class="field" style="margin-bottom:9px;"><label>小模型 Qwen3-8B</label><input class="input" value="{{ epSmall }}" onChange="{{ setEpSmall }}"></div>
+        <div class="field" style="margin-bottom:9px;"><label>ComfyUI · Flux.2</label><input class="input" value="{{ epComfy }}" onChange="{{ setEpComfy }}"></div>
+        <div class="field" style="margin-bottom:9px;"><label>Hailuo 视频</label><input class="input" value="{{ epHailuo }}" onChange="{{ setEpHailuo }}"></div>
+        <div class="field"><label>CosyVoice 2</label><input class="input" value="{{ epTts }}" onChange="{{ setEpTts }}"></div>
+        <button class="btn btn-secondary btn-block" onClick="{{ saveEndpoints }}">保存端点</button>
+        <div style="font-size:11px; line-height:1.8; color:color-mix(in srgb, var(--color-text) 55%, transparent); margin-top:10px;">先跑 setup.bat 的 [4] 启动服务。vLLM 需带 --allowed-origins 才允许网页跨域调用。</div>
+      </div>
+
+      <div style="border:1px solid var(--color-divider); border-radius:var(--radius-md); padding:14px;">
+        <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:10px;">
+          <span style="font-size:10px; letter-spacing:0.14em; color:var(--color-accent);">运行日志</span>
+          <span style="font-size:11px; color:color-mix(in srgb, var(--color-text) 45%, transparent); cursor:pointer;" onClick="{{ clearLogs }}">清空</span>
+        </div>
+        <div style="max-height:520px; overflow-y:auto; display:flex; flex-direction:column; gap:7px;">
+          <sc-for list="{{ logs }}" as="l" hint-placeholder-count="3">
+            <div style="display:grid; grid-template-columns:56px 1fr; gap:8px; font-size:11.5px; line-height:1.65;">
+              <span style="font-variant-numeric:tabular-nums; color:color-mix(in srgb, var(--color-text) 40%, transparent);">{{ l.t }}</span>
+              <span style="{{ l.style }}">{{ l.msg }}</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1440,&quot;height&quot;:980}}">
+const DEFAULT_EP = {
+  llm: "http://127.0.0.1:8000",
+  small: "http://127.0.0.1:8001",
+  comfy: "http://127.0.0.1:7860",
+  hailuo: "http://127.0.0.1:9000",
+  tts: "http://127.0.0.1:9100"
+};
+
+const SAMPLE = "　　青光闪动，一柄青钢剑倏地刺出，指向中年汉子左肩，使剑少年不待剑招用老，腕抖剑斜，剑锋已削向那汉子右颈。那中年汉子竖剑挡格，铮的一声响，双剑相击，嗡嗡做声，震声未绝，双刃剑光霍霍，已拆了三招。\n　　两人剑法迅捷，全力相搏。\n　　练武厅东边坐着二人。上首是个四十左右的中年道姑，铁青着脸，嘴唇紧闭。下首是个五十余岁的老者，右手捻着长须，神情甚是得意。西边一排椅子上坐着十余位宾客。\n　　突然中年汉子长剑挥出，用力猛了，身子微晃，似欲摔跌。西边宾客中一个身穿青衫的年轻男子忍不住“嗤”的一声笑。他随即知道失态，忙伸手按住了口。";
+
+const stripThink = t => String(t || "").replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+
+function parseJSON(text) {
+  let t = stripThink(text).replace(/```json/gi, "```").split("```").filter(s => s.trim()).pop() || "";
+  const a = t.indexOf("{"), b = t.indexOf("[");
+  const start = (a < 0) ? b : (b < 0 ? a : Math.min(a, b));
+  if (start < 0) throw new Error("模型未返回 JSON：" + t.slice(0, 120));
+  const end = Math.max(t.lastIndexOf("}"), t.lastIndexOf("]"));
+  return JSON.parse(t.slice(start, end + 1));
+}
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+class Component extends DCLogic {
+  state = {
+    ep: Object.assign({}, DEFAULT_EP),
+    novel: SAMPLE, style: "写实电影感，35mm 胶片，暖调 Kodak 2383，细颗粒，浅景深",
+    secs: 10, maxShots: 6,
+    chars: [], scenes: [], shots: [], images: [], clips: [], ffmpeg: "",
+    steps: { extract: "", script: "", images: "", video: "", final: "" },
+    logs: [], busy: "", health: ""
+  };
+
+  componentDidMount() {
+    try {
+      const s = localStorage.getItem("bookreel.endpoints");
+      if (s) this.setState({ ep: Object.assign({}, DEFAULT_EP, JSON.parse(s)) });
+    } catch (e) { /* 首次运行无配置 */ }
+  }
+
+  log(msg, lv) {
+    const t = new Date().toTimeString().slice(0, 8);
+    this.setState(s => ({ logs: s.logs.concat([{ t, msg: String(msg), lv: lv || "info" }]).slice(-200) }));
+  }
+
+  setStep(k, v) { this.setState(s => ({ steps: Object.assign({}, s.steps, { [k]: v }) })); }
+
+  async chat(base, model, sys, user, effort) {
+    const body = {
+      model, messages: [{ role: "system", content: sys }, { role: "user", content: user }],
+      temperature: 0.7, top_p: 0.8, max_tokens: 8192,
+      reasoning_effort: effort || "low",
+      chat_template_kwargs: { enable_thinking: effort === "xhigh" }
+    };
+    const r = await fetch(base + "/v1/chat/completions", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body)
+    });
+    if (!r.ok) throw new Error("LLM HTTP " + r.status + " " + (await r.text()).slice(0, 200));
+    const j = await r.json();
+    return j.choices[0].message.content;
+  }
+
+  async comfy(prompt, seed, name) {
+    const base = this.state.ep.comfy;
+    const tpl = await (await fetch("./comfy-flux2-9x16.json")).text();
+    const wf = JSON.parse(tpl.replace("__PROMPT__", JSON.stringify(prompt).slice(1, -1)));
+    delete wf._comment;
+    wf["40"].inputs.seed = seed;
+    const r = await fetch(base + "/prompt", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: wf, client_id: "bookreel" })
+    });
+    if (!r.ok) throw new Error("ComfyUI HTTP " + r.status + " " + (await r.text()).slice(0, 200));
+    const id = (await r.json()).prompt_id;
+    for (let i = 0; i < 180; i++) {
+      await sleep(2000);
+      const h = await (await fetch(base + "/history/" + id)).json();
+      const rec = h[id];
+      if (!rec) continue;
+      const outs = rec.outputs || {};
+      for (const k in outs) {
+        const imgs = outs[k].images;
+        if (imgs && imgs.length) {
+          const im = imgs[0];
+          this.log("出图完成 · " + name + "（" + (i * 2) + "s）");
+          return base + "/view?filename=" + encodeURIComponent(im.filename) +
+            "&subfolder=" + encodeURIComponent(im.subfolder || "") + "&type=" + (im.type || "output");
+        }
+      }
+      if (rec.status && rec.status.status_str === "error") throw new Error("ComfyUI 任务失败 · " + name);
+    }
+    throw new Error("ComfyUI 超时 · " + name);
+  }
+
+  async hailuo(prompt, firstFrame, label) {
+    const base = this.state.ep.hailuo;
+    const r = await fetch(base + "/v1/video/generations", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "hailuo-02", prompt: prompt, first_frame_image: firstFrame || undefined,
+        duration: Number(this.state.secs) || 10, resolution: "1080x1920", prompt_optimizer: false
+      })
+    });
+    if (!r.ok) throw new Error("Hailuo HTTP " + r.status + " " + (await r.text()).slice(0, 200));
+    const j = await r.json();
+    const task = j.task_id || j.id;
+    if (!task) return j.video_url || j.file_url;
+    for (let i = 0; i < 240; i++) {
+      await sleep(3000);
+      const q = await (await fetch(base + "/v1/query/video_generation?task_id=" + encodeURIComponent(task))).json();
+      const st = (q.status || q.task_status || "").toLowerCase();
+      if (st === "success" || st === "finished" || q.video_url || q.file_url) {
+        this.log("片段完成 · " + label + "（" + (i * 3) + "s）");
+        return q.video_url || q.file_url || (base + "/v1/files/" + (q.file_id || task));
+      }
+      if (st === "fail" || st === "failed") throw new Error("Hailuo 任务失败 · " + label);
+      if (i % 5 === 0) this.setStep("video", "渲染中 " + label + " · " + (i * 3) + "s");
+    }
+    throw new Error("Hailuo 超时 · " + label);
+  }
+
+  guard(key, fn) {
+    return async () => {
+      if (this.state.busy) { this.log("已有任务在跑：" + this.state.busy, "warn"); return; }
+      this.setState({ busy: key });
+      try { await fn(); }
+      catch (e) { this.log("× " + e.message, "error"); this.setStep(key, "失败"); }
+      finally { this.setState({ busy: "" }); }
+    };
+  }
+
+  async doExtract() {
+    this.setStep("extract", "运行中");
+    this.log("抽取人物与场景…");
+    const sys = "你是影视改编策划。只输出 JSON，不要解释。";
+    const user = "从下面小说片段中抽取人物与场景。人物需给出性格 traits（3-4 个词）与容貌 look（一句话，容貌要与性格相符）；场景需给出 when（内外景与时段）与 desc（光线与陈设）。合并同一人物的不同指称。\n输出格式：{\"characters\":[{\"name\":\"\",\"role\":\"\",\"traits\":[],\"look\":\"\"}],\"scenes\":[{\"name\":\"\",\"when\":\"\",\"desc\":\"\"}]}\n\n原文：\n" + this.state.novel;
+    const out = parseJSON(await this.chat(this.state.ep.llm, "qwen3.8-27b", sys, user, "medium"));
+    this.setState({ chars: out.characters || [], scenes: out.scenes || [] });
+    this.setStep("extract", "完成 · " + (out.characters || []).length + " 人 / " + (out.scenes || []).length + " 景");
+    this.log("抽取完成：" + (out.characters || []).map(c => c.name).join("、"));
+  }
+
+  async doScript() {
+    if (!this.state.chars.length) throw new Error("请先运行第 01 步");
+    this.setStep("script", "运行中");
+    this.log("转写剧本与分镜…");
+    const secs = Number(this.state.secs) || 10;
+    const sys = "你是分镜师。只输出 JSON，不要解释。";
+    const user = "把下面片段改写成可拍摄的分镜，每段严格 " + secs + " 秒，最多 " + this.state.maxShots + " 段。为每段设计运镜（推/拉/摇/移/跟/环绕/固定）、景别、转场，并写出可直接送给视频模型的中文 prompt（含运镜、光线、风格）。风格统一为：" + this.state.style + "。人物设定：" + JSON.stringify(this.state.chars) + "\n输出格式：{\"shots\":[{\"n\":\"01\",\"move\":\"\",\"size\":\"\",\"trans\":\"\",\"desc\":\"\",\"narration\":\"\",\"prompt\":\"\",\"scene\":\"\"}]}\n\n原文：\n" + this.state.novel;
+    const out = parseJSON(await this.chat(this.state.ep.llm, "qwen3.8-27b", sys, user, "xhigh"));
+    const shots = (out.shots || []).slice(0, Number(this.state.maxShots) || 6);
+    this.setState({ shots });
+    this.setStep("script", "完成 · " + shots.length + " 段 / " + shots.length * secs + "s");
+    this.log("分镜完成：" + shots.length + " 段");
+  }
+
+  async doImages() {
+    if (!this.state.chars.length) throw new Error("请先运行第 01 步");
+    this.setStep("images", "运行中");
+    const out = [];
+    const jobs = this.state.chars.map((c, i) => ({
+      name: c.name, seed: 1000000 + i * 7919,
+      prompt: "全身立绘，纯白背景，柔和顶光；" + c.name + "，" + (c.look || "") + "；性格：" + (c.traits || []).join("、") + "；" + this.state.style + "；9:16 竖构图，无文字，无水印"
+    })).concat(this.state.scenes.map((s, i) => ({
+      name: s.name, seed: 2000000 + i * 7919,
+      prompt: "空镜场景：" + s.name + "，" + (s.when || "") + "，" + (s.desc || "") + "；" + this.state.style + "；9:16 竖构图，无人物，无文字"
+    })));
+    for (let i = 0; i < jobs.length; i++) {
+      this.setStep("images", "出图 " + (i + 1) + " / " + jobs.length);
+      this.log("Flux.2 出图 · " + jobs[i].name);
+      const url = await this.comfy(jobs[i].prompt, jobs[i].seed, jobs[i].name);
+      out.push({ name: jobs[i].name, url });
+      this.setState({ images: out.slice() });
+    }
+    this.setStep("images", "完成 · " + out.length + " 张");
+  }
+
+  async doVideo() {
+    if (!this.state.shots.length) throw new Error("请先运行第 02 步");
+    this.setStep("video", "运行中");
+    const clips = [];
+    const shots = this.state.shots;
+    for (let i = 0; i < shots.length; i++) {
+      const s = shots[i];
+      const ref = (this.state.images.find(im => s.scene && im.name === s.scene) || this.state.images[0] || {}).url;
+      this.log("Hailuo 提交 · 片段 " + (s.n || i + 1));
+      this.setStep("video", "生成 " + (i + 1) + " / " + shots.length);
+      const url = await this.hailuo((s.prompt || s.desc) + "；" + this.state.style, i === 0 ? ref : undefined, String(s.n || i + 1));
+      clips.push({ n: s.n || String(i + 1), url, label: (s.n || i + 1) + " · " + (s.move || "") });
+      this.setState({ clips: clips.slice() });
+    }
+    this.setStep("video", "完成 · " + clips.length + " 段");
+  }
+
+  async doFinal() {
+    if (!this.state.clips.length) throw new Error("请先运行第 04 步");
+    this.setStep("final", "运行中");
+    let voiced = 0;
+    for (const s of this.state.shots) {
+      if (!s.narration) continue;
+      try {
+        const r = await fetch(this.state.ep.tts + "/tts", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: s.narration, voice: "storyteller", speed: 0.95, format: "wav" })
+        });
+        if (r.ok) voiced += 1;
+      } catch (e) { this.log("旁白服务未就绪，跳过 · " + (s.n || ""), "warn"); break; }
+    }
+    const list = this.state.clips.map(c => "file 'clip-" + c.n + ".mp4'").join("\n");
+    const cmd = "# 1) 把片段按编号下载到 output\\ 目录\n" + list +
+      "\n\n# 2) 无损拼接\nffmpeg -f concat -safe 0 -i concat.txt -c copy chapter-01.mp4\n" +
+      "\n# 3) 混入旁白与配乐\nffmpeg -i chapter-01.mp4 -i narration.wav -i bgm.wav \\\n" +
+      "  -filter_complex \"[1:a]volume=1.0[a1];[2:a]volume=0.28[a2];[a1][a2]amix=inputs=2[a]\" \\\n" +
+      "  -map 0:v -map \"[a]\" -c:v copy -c:a aac -shortest chapter-01-final.mp4";
+    this.setState({ ffmpeg: cmd });
+    this.setStep("final", voiced ? "完成 · 旁白 " + voiced + " 段" : "完成 · 未配旁白");
+    this.log("合成脚本已生成");
+  }
+
+  async doAll() {
+    await this.doExtract();
+    await this.doScript();
+    await this.doImages();
+    await this.doVideo();
+    await this.doFinal();
+    this.log("全流程结束");
+  }
+
+  async doHealth() {
+    const ep = this.state.ep;
+    const probes = [["主模型", ep.llm + "/v1/models"], ["小模型", ep.small + "/v1/models"], ["ComfyUI", ep.comfy + "/system_stats"], ["Hailuo", ep.hailuo + "/health"], ["旁白", ep.tts + "/health"]];
+    let ok = 0;
+    for (const [name, url] of probes) {
+      try {
+        const r = await fetch(url, { method: "GET" });
+        if (r.ok) { ok += 1; this.log("✓ " + name + " 在线"); } else this.log("! " + name + " HTTP " + r.status, "warn");
+      } catch (e) { this.log("× " + name + " 未连接", "error"); }
+    }
+    this.setState({ health: ok + "/" + probes.length + " 在线" });
+  }
+
+  renderVals() {
+    const st = this.state, ep = st.ep, steps = st.steps;
+    const badge = v => "font-size:10.5px; padding:2px 8px; border-radius:3px; white-space:nowrap; display:inline-block; background:" +
+      (v.indexOf("完成") === 0 ? "var(--color-accent-100)" : v === "失败" ? "var(--color-accent-200)" : "var(--color-neutral-100)") +
+      "; color:" + (v.indexOf("完成") === 0 ? "var(--color-accent-800)" : v === "失败" ? "var(--color-accent-900)" : "var(--color-neutral-700)") + ";";
+    const logStyle = lv => "line-height:1.65; color:" + (lv === "error" ? "var(--color-accent-900)" : lv === "warn" ? "var(--color-accent-700)" : "color-mix(in srgb, var(--color-text) 75%, transparent)") + ";";
+    const setEp = k => e => { const v = e.target.value; this.setState(s => ({ ep: Object.assign({}, s.ep, { [k]: v }) })); };
+
+    return {
+      novel: st.novel, style: st.style, secs: st.secs, maxShots: st.maxShots,
+      novelStat: st.novel.length + " 字 · 预估 " + Math.max(1, Math.round(st.novel.length / 120)) + " 个片段",
+      setNovel: e => this.setState({ novel: e.target.value }),
+      setStyle: e => this.setState({ style: e.target.value }),
+      setSecs: e => this.setState({ secs: e.target.value }),
+      setMaxShots: e => this.setState({ maxShots: e.target.value }),
+
+      epLlm: ep.llm, epSmall: ep.small, epComfy: ep.comfy, epHailuo: ep.hailuo, epTts: ep.tts,
+      setEpLlm: setEp("llm"), setEpSmall: setEp("small"), setEpComfy: setEp("comfy"),
+      setEpHailuo: setEp("hailuo"), setEpTts: setEp("tts"),
+      saveEndpoints: () => { localStorage.setItem("bookreel.endpoints", JSON.stringify(this.state.ep)); this.log("端点已保存"); },
+
+      runAll: this.guard("全流程", () => this.doAll()),
+      runAllLabel: st.busy ? "运行中 · " + st.busy : "一键跑完整条流水线",
+      runExtract: this.guard("extract", () => this.doExtract()),
+      runScript: this.guard("script", () => this.doScript()),
+      runImages: this.guard("images", () => this.doImages()),
+      runVideo: this.guard("video", () => this.doVideo()),
+      runFinal: this.guard("final", () => this.doFinal()),
+      checkHealth: this.guard("health", () => this.doHealth()),
+
+      s1State: steps.extract || "未运行", s1Style: badge(steps.extract || "未运行"),
+      s2State: steps.script || "未运行", s2Style: badge(steps.script || "未运行"),
+      s3State: steps.images || "未运行", s3Style: badge(steps.images || "未运行"),
+      s4State: steps.video || "未运行", s4Style: badge(steps.video || "未运行"),
+      s5State: steps.final || "未运行", s5Style: badge(steps.final || "未运行"),
+
+      healthLabel: st.health || "服务状态未知",
+      healthStyle: badge(st.health && st.health.indexOf("5/5") === 0 ? "完成" : "未运行"),
+
+      hasChars: st.chars.length > 0,
+      chars: st.chars.map(c => ({ name: c.name, line: (c.traits || []).join("、") + " — " + (c.look || "") })),
+      scenesOut: st.scenes.map(s => ({ name: s.name, line: (s.when || "") + " — " + (s.desc || "") })),
+      hasShots: st.shots.length > 0, shots: st.shots,
+      hasImages: st.images.length > 0, images: st.images,
+      hasClips: st.clips.length > 0, clips: st.clips,
+      hasFinal: !!st.ffmpeg, ffmpegCmd: st.ffmpeg,
+      copyCmd: () => { navigator.clipboard.writeText(st.ffmpeg); this.log("命令已复制"); },
+      downloadList: () => {
+        const blob = new Blob([st.clips.map(c => "file 'clip-" + c.n + ".mp4'").join("\n")], { type: "text/plain" });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob); a.download = "concat.txt"; a.click();
+        URL.revokeObjectURL(a.href);
+      },
+
+      logs: st.logs.slice().reverse().map(l => ({ t: l.t, msg: l.msg, style: logStyle(l.lv) })),
+      clearLogs: () => this.setState({ logs: [] })
+    };
+  }
+}
+
+</script>
+</body>
+</html>

@@ -1,0 +1,40 @@
+# Runtime dirs created by setup.bat / install.bat — never commit these
+models/
+venvs/
+logs/
+ComfyUI/
+hailuo/
+outputs/
+output/
+temp/
+tmp/
+
+# Hugging Face cache
+hf/
+.cache/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+env/
+
+# Node
+node_modules/
+
+# Secrets / local config
+.env
+*.local
+*token*.txt
+hf_token*
+
+# OS / editor
+Thumbs.db
+desktop.ini
+.DS_Store
+.idea/
+.vscode/
+
+# Stray git lock files moved aside by Claude (safe to delete this folder)
+_to_delete/

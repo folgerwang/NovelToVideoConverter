@@ -1,0 +1,94 @@
+书影 Bookreel · 小说转视频 —— 部署说明
+（单张 RTX 4090 24GB）
+
+────────────────────────────────────────
+为什么脚本是英文的
+────────────────────────────────────────
+Windows 的 cmd 在 chcp 生效前就已按当前代码页逐字节读取 .bat，
+中文注释会让解析器错位，出现 “'起' 不是内部或外部命令” 这类报错。
+所以全部 .bat 一律 ASCII + CRLF 换行，中文说明放在这个 txt 里。
+
+────────────────────────────────────────
+环境要求
+────────────────────────────────────────
+Python 3.11 或 3.12 最稳。
+3.13 / 3.14 下 torch、ComfyUI 的轮子常常还没跟上，会报
+  ERROR: Could not find a version that satisfies the requirement torch
+脚本已改成走默认 PyPI（自带 CUDA 的 wheel）并带 cu128 / CPU 两级回退，
+如果还是装不上，装个 Python 3.12 并删掉 venvs 目录重跑 1。
+
+────────────────────────────────────────
+目录
+────────────────────────────────────────
+setup.bat                 主菜单
+scripts\env.bat           公共路径与参数（要改模型仓库、上下文长度改这里）
+scripts\install.bat       建 venv、装 vLLM / ComfyUI / 音频依赖
+scripts\hf-login.bat      登录 Hugging Face（gated 仓库必需）
+scripts\download.bat      下载权重
+scripts\run-llm.bat       档位 A · Qwen3.8-27B AWQ    :8000
+scripts\run-llm-small.bat 档位 A 备选 · Qwen3-8B AWQ  :8000
+scripts\run-comfy.bat     档位 B · ComfyUI Flux.2     :7860
+scripts\run-hailuo.bat    档位 C · Hailuo 视频        :9000
+scripts\run-light.bat     常驻 CPU 服务（检索 / 旁白 / 对齐）
+scripts\stop.bat          释放显存
+scripts\health.bat        端口与显存体检
+Pipeline Runner.dc.html   网页控制台（真调本地接口）
+comfy-flux2-9x16.json     Flux.2 工作流模板，节点名要与你的 ComfyUI 一致
+
+────────────────────────────────────────
+首次使用
+────────────────────────────────────────
+1. 双击 setup.bat（或 PowerShell 里执行 .\setup.bat）
+2. 选 1 安装环境
+3. 选 L 登录 Hugging Face（gated 仓库必需）
+   在 https://huggingface.co/settings/tokens 建一个 READ token 粘进去
+   再打开 https://huggingface.co/black-forest-labs/FLUX.2-dev 点 Accept
+   不做这步下载会报 Access denied. This repository requires approval.
+4. 选 2 下载权重
+   把 models\flux2 里的权重放进 ComfyUI\models\ 对应目录：
+     diffusion_models / text_encoders / vae
+   4090 用 fp8_e4m3fn 版本的 unet，fp16 会 OOM
+   不想走 gated 审批的话，用这两个免审仓库替代：
+     Comfy-Org/flux2-dev-ComfyUI   已重打包，直接丢进 ComfyUI
+     Kijai/flux2-fp8               fp8 单文件，下载最小
+5. 选 3 起常驻服务（不占显存，可一直开着）
+6. 选 W 打开网页控制台
+
+────────────────────────────────────────
+一章的跑法（三档轮流占卡）
+────────────────────────────────────────
+档位 A：菜单选 A → 控制台跑第 01、02 步（抽人物、写分镜）
+档位 B：菜单选 B → 控制台跑第 03 步（出参考图）
+档位 C：菜单选 C → 控制台跑第 04、05 步（出片、合成）
+切档时脚本会自动 kill 上一档，不用手动关窗口。
+
+粗略耗时：A 约 12 分钟；B 十来张图约 12 分钟；
+C 是大头，42 段 10 秒片段属于通宵量级，建议按场次分批过夜跑。
+
+────────────────────────────────────────
+需要你自己接的两处
+────────────────────────────────────────
+1. Hailuo 本地服务
+   scripts\run-hailuo.bat 里的启动命令是占位，按你的部署方式改。
+   网页控制台按 MiniMax API 的形状调用：
+     POST /v1/video/generations  { model, prompt, first_frame_image,
+                                   duration, resolution }
+     GET  /v1/query/video_generation?task_id=...
+   接口不同的话告诉我，我改控制台那边。
+
+2. services\ 下的三个 FastAPI 薄封装还没写：
+     embed_server.py  (Qwen3-Embedding，CPU)
+     tts_server.py    (CosyVoice2 旁白)
+     asr_server.py    (FunASR 对齐)
+   没有它们不影响 01-04 步，只是第 05 步不出旁白。需要我补。
+
+────────────────────────────────────────
+24GB 上的四条硬约束
+────────────────────────────────────────
+· 权重必须量化：27B 的 BF16 要 56GB，只能上 AWQ 4bit 或 GGUF Q4_K_M
+· 上下文限 32K：262K 原生上下文的 KV cache 放不下，改按章送入
+· reasoning_effort 收着用：改写剧本给 xhigh，批量切片和写 prompt 用 low
+· 视频降规格：720x1280 出片，成片前用 Real-ESRGAN 统一超分到 1080x1920
+
+跨域：vLLM 默认允许全部来源，无需额外参数；ComfyUI 需要
+--enable-cors-header "*"，脚本里已经带上。
