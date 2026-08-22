@@ -14,11 +14,16 @@ if errorlevel 1 (
   pause
 )
 
-echo   [1/5] %M_MAIN_AWQ%   ~16GB
+echo   [1/5] %M_MAIN_AWQ%   ~18GB
 hf download %M_MAIN_AWQ% --local-dir "%MODELS%\qwen3.8-27b-awq"
 if errorlevel 1 (
-  echo   ! official AWQ repo unavailable - community GGUF fallback:
-  echo     hf download bartowski/Qwen3.8-27B-GGUF --include "*Q4_K_M*" --local-dir "%MODELS%\qwen3.8-27b-gguf"
+  echo   ! primary repo failed - trying alternate 4-bit build %M_MAIN_ALT%
+  hf download %M_MAIN_ALT% --local-dir "%MODELS%\qwen3.8-27b-awq"
+  if errorlevel 1 (
+    echo   x both 4-bit repos failed. Check network / hf login.
+    echo     GGUF builds exist ^(unsloth, bartowski^) but vLLM cannot serve them well -
+    echo     use llama.cpp instead if you go that route.
+  )
 )
 
 echo   [2/5] %M_SMALL%   ~6GB
