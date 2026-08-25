@@ -135,6 +135,30 @@ def embeddings(req: EmbedRequest):
     }
 
 
+
+def _resolve_device(name):
+    """Return a device torch can actually use, falling back to CPU.
+
+    "mps" is Apple Silicon's Metal backend; the stock macOS torch wheel has
+    it, but a model can still hit an op Metal has no kernel for, so turn on
+    the CPU fallback for those ops instead of crashing. Set the env var here
+    as well as in setup.command so a hand-started server behaves the same.
+    """
+    if name != "mps":
+        return name
+    os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
+    try:
+        import torch
+    except Exception:
+        print("%s torch not importable -- using cpu" % "[embed]", flush=True)
+        return "cpu"
+    mps = getattr(torch.backends, "mps", None)
+    if mps is None or not mps.is_available():
+        print("%s mps unavailable (not Apple Silicon, or a CPU-only torch)"
+              " -- using cpu" % "[embed]", flush=True)
+        return "cpu"
+    return "mps"
+
 def main():
     ap = argparse.ArgumentParser(description="Bookreel CPU embedding service")
     here = os.path.dirname(os.path.abspath(__file__))
@@ -142,14 +166,14 @@ def main():
     ap.add_argument("--port", type=int, default=8002)
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--model", default=os.path.normpath(default_model))
-    ap.add_argument("--device", default="cpu", choices=["cpu", "cuda"])
+    ap.add_argument("--device", default="cpu", choices=["cpu", "cuda", "mps"])
     ap.add_argument("--name", default="qwen3-embedding")
     ap.add_argument("--batch", type=int, default=16)
     ap.add_argument("--preload", action="store_true",
                     help="load weights at startup instead of on first request")
     args = ap.parse_args()
 
-    CFG.update(model_path=os.path.abspath(args.model), device=args.device,
+    CFG.update(model_path=os.path.abspath(args.model), device=_resolve_device(args.device),
                name=args.name, batch=args.batch)
 
     print("[embed] model dir : %s" % CFG["model_path"], flush=True)

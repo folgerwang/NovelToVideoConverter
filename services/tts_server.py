@@ -261,6 +261,30 @@ def tts(req: TTSRequest):
     return Response(content=data, media_type="audio/wav", headers=headers)
 
 
+
+def _resolve_device(name):
+    """Return a device torch can actually use, falling back to CPU.
+
+    "mps" is Apple Silicon's Metal backend; the stock macOS torch wheel has
+    it, but a model can still hit an op Metal has no kernel for, so turn on
+    the CPU fallback for those ops instead of crashing. Set the env var here
+    as well as in setup.command so a hand-started server behaves the same.
+    """
+    if name != "mps":
+        return name
+    os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
+    try:
+        import torch
+    except Exception:
+        print("%s torch not importable -- using cpu" % "[tts]", flush=True)
+        return "cpu"
+    mps = getattr(torch.backends, "mps", None)
+    if mps is None or not mps.is_available():
+        print("%s mps unavailable (not Apple Silicon, or a CPU-only torch)"
+              " -- using cpu" % "[tts]", flush=True)
+        return "cpu"
+    return "mps"
+
 def main():
     ap = argparse.ArgumentParser(description="Bookreel CosyVoice2 narration service")
     here = os.path.dirname(os.path.abspath(__file__))
@@ -269,19 +293,19 @@ def main():
     ap.add_argument("--model", default=os.path.normpath(os.path.join(here, "..", "models", "cosyvoice2")))
     ap.add_argument("--voices", default=os.path.normpath(os.path.join(here, "..", "voices")))
     ap.add_argument("--out", default=os.path.normpath(os.path.join(here, "..", "output", "audio")))
-    ap.add_argument("--device", default="cpu", choices=["cpu", "cuda"])
+    ap.add_argument("--device", default="cpu", choices=["cpu", "cuda", "mps"])
     ap.add_argument("--no-save", action="store_true", help="do not write wavs to the output dir")
     ap.add_argument("--preload", action="store_true", help="load weights at startup")
     args = ap.parse_args()
 
-    if args.device == "cpu":
+    if args.device != "cuda":
         os.environ.setdefault("CUDA_VISIBLE_DEVICES", "")
 
     CFG.update(
         model_path=os.path.abspath(args.model),
         voices_dir=os.path.abspath(args.voices),
         out_dir=os.path.abspath(args.out),
-        device=args.device,
+        device=_resolve_device(args.device),
         save=not args.no_save,
     )
 

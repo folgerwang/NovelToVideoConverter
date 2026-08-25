@@ -250,12 +250,36 @@ else:
         raise HTTPException(status_code=503, detail=_NO_MULTIPART_MSG)
 
 
+
+def _resolve_device(name):
+    """Return a device torch can actually use, falling back to CPU.
+
+    "mps" is Apple Silicon's Metal backend; the stock macOS torch wheel has
+    it, but a model can still hit an op Metal has no kernel for, so turn on
+    the CPU fallback for those ops instead of crashing. Set the env var here
+    as well as in setup.command so a hand-started server behaves the same.
+    """
+    if name != "mps":
+        return name
+    os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
+    try:
+        import torch
+    except Exception:
+        print("%s torch not importable -- using cpu" % "[asr]", flush=True)
+        return "cpu"
+    mps = getattr(torch.backends, "mps", None)
+    if mps is None or not mps.is_available():
+        print("%s mps unavailable (not Apple Silicon, or a CPU-only torch)"
+              " -- using cpu" % "[asr]", flush=True)
+        return "cpu"
+    return "mps"
+
 def main():
     ap = argparse.ArgumentParser(description="Bookreel FunASR forced-alignment service")
     here = os.path.dirname(os.path.abspath(__file__))
     ap.add_argument("--port", type=int, default=9101)
     ap.add_argument("--host", default="127.0.0.1")
-    ap.add_argument("--device", default="cpu", choices=["cpu", "cuda"])
+    ap.add_argument("--device", default="cpu", choices=["cpu", "cuda", "mps"])
     ap.add_argument("--model", default="fa-zh",
                     help="FunASR model id; fa-zh is the Chinese forced aligner")
     ap.add_argument("--cache", default=os.path.normpath(os.path.join(here, "..", "models", "funasr")),
@@ -263,10 +287,11 @@ def main():
     ap.add_argument("--preload", action="store_true", help="load at startup")
     args = ap.parse_args()
 
-    if args.device == "cpu":
+    if args.device != "cuda":
         os.environ.setdefault("CUDA_VISIBLE_DEVICES", "")
 
-    CFG.update(device=args.device, model=args.model, cache=os.path.abspath(args.cache))
+    CFG.update(device=_resolve_device(args.device), model=args.model,
+               cache=os.path.abspath(args.cache))
     os.environ.setdefault("MODELSCOPE_CACHE", CFG["cache"])
 
     print("[asr] model     : %s" % CFG["model"], flush=True)

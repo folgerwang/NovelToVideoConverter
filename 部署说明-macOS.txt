@@ -1,0 +1,145 @@
+书影 Bookreel · 小说转视频 —— macOS 部署说明
+（Apple Silicon，M3 Max 64GB 统一内存为基准）
+
+Windows / RTX 4090 的那一套仍在 setup.bat 和 部署说明.txt 里，两边互不影响。
+Mac 这边全部逻辑在 setup.command 一个文件里。
+
+────────────────────────────────────────
+为什么另起一个脚本
+────────────────────────────────────────
+不是换个后缀那么简单，四处是硬差异：
+
+1. vLLM 和 CUDA 版 torch 在 Mac 上都不存在。llama.cpp 官方发布里有
+   macos-arm64 的 Metal 预编译包，接口与 Windows 版完全一致，网页控制台
+   不用改。
+2. PyPI 上的 torch 在 macOS arm64 就是 Metal（MPS）版，不需要 get-torch
+   那种“换源再验证”的绕法，直接 pip install torch 即可。
+3. 显存不再是独立的一块。GPU 和 CPU 共用这 64GB，所以 nvidia-smi 那类体检
+   没有对应物，脚本改看进程 RSS。
+4. 视频那一档在 Mac 上没有本地实现（见下）。
+
+────────────────────────────────────────
+环境要求
+────────────────────────────────────────
+· Apple Silicon（M1 以上，本文按 M3 Max 64GB 调参），macOS 14 以上
+· Xcode 命令行工具：xcode-select --install
+· Python 3.11 或 3.12 最稳：brew install python@3.12
+  3.13 / 3.14 下 ComfyUI 的部分依赖仍有轮子缺口
+· ffmpeg（第 05 步合成用）：brew install ffmpeg
+· 注意别在 Rosetta 下开终端。终端里 uname -m 必须是 arm64，
+  出现 x86_64 的话 torch 会装成 CPU 版，Metal 全部失效。
+
+────────────────────────────────────────
+目录
+────────────────────────────────────────
+setup.command                主菜单（Finder 里双击，或 ./setup.command）
+scripts/get-llama-mac.sh     拉 llama.cpp 的 macos-arm64 预编译包
+                             失败时依次退到 brew、源码编译
+services/embed_server.py     检索向量  :8002  （--device mps）
+services/tts_server.py       旁白      :9100  （--device cpu）
+services/asr_server.py       对齐      :9101  （--device cpu）
+logs/                        各档位的输出日志与 pid
+Pipeline Runner.dc.html      网页控制台
+
+────────────────────────────────────────
+首次使用
+────────────────────────────────────────
+1. 终端里执行：chmod +x setup.command scripts/get-llama-mac.sh
+   之后就可以在 Finder 里双击 setup.command
+2. 选 1 安装环境（建 venv、拉 llama.cpp、克隆 ComfyUI）
+3. 选 L 登录 Hugging Face
+   在 https://huggingface.co/settings/tokens 建 READ token 粘进去
+   再打开 https://huggingface.co/black-forest-labs/FLUX.2-dev 点 Accept
+4. 选 2 下载权重
+   把 models/flux2 里的权重放进 ComfyUI/models/ 对应目录：
+     diffusion_models / text_encoders / vae
+   ★ 与 4090 版相反：Mac 上优先用 bf16 版 unet，不要 fp8。
+     MPS 没有 fp8 kernel，fp8 权重加载时会被升回 bf16，白下一遍。
+5. 选 3 起常驻服务
+6. 选 W 打开网页控制台
+
+────────────────────────────────────────
+与 4090 版的差异一览
+────────────────────────────────────────
+· 档位不再互斥
+  24GB 显存装不下两个大模型，所以 Windows 版切档时会先 kill 上一档。
+  这里 27B（约 17GB）＋ Flux.2（约 24GB）同时在内存里还有余量，
+  默认不互斥。内存小的 Mac 把 setup.command 里的 EXCLUSIVE_SLOTS 改成 1
+  就恢复旧行为。
+
+· 小模型换到 :8001
+  既然可以并存，Qwen3-8B 就不必和 27B 抢 :8000 了。:8001 正好是网页控制台
+  “小模型”那一栏的默认值。
+
+· 上下文从 16K 提到 32K
+  KV cache 每 token 约 260KB，32K 大约吃 8GB，这里放得下。想要 64K 就把
+  MAIN_CTX 改掉；再紧张可以加 KV_FLAGS="--cache-type-k q8_0 --cache-type-v q8_0"
+  把 KV 砍一半。
+
+· 权重可以不用压那么狠
+  64GB 下 27B 的 Q5_K_M（19.8GB）甚至 Q6_K（23GB）都跑得动，
+  改 setup.command 里的 F_MAIN_GGUF 即可。
+
+· 常驻服务的设备
+  检索向量走 mps，明显快；CosyVoice2 和 FunASR 留在 cpu ——
+  它们会碰到 Metal 没有实现的算子，逐个回落到 CPU 反而比全程 CPU 更慢。
+  三个服务现在都认 --device mps，想试就改 setup.command 顶部的
+  EMBED_DEVICE / TTS_DEVICE / ASR_DEVICE。
+
+· 后台运行 + 日志
+  Windows 版每档开一个 cmd 窗口；这里统一用 nohup 丢后台，输出写到
+  logs/<档位>.log，菜单里 T 可以直接 tail。菜单 F 只杀重档，
+  常驻服务不动。
+
+────────────────────────────────────────
+视频那一档（档位 C）
+────────────────────────────────────────
+Mac 上没有本地跑法：这条流水线用的视频模型只有 CUDA kernel，Metal 没有
+对应实现，不是显存大小的问题。两条路：
+
+1. 把控制台里 Hailuo 的端点改成 MiniMax 云端 API。控制台发的请求形状本来
+   就是照 MiniMax 写的，不用改代码：
+     POST /v1/video/generations  { model, prompt, first_frame_image,
+                                   duration, resolution }
+     GET  /v1/query/video_generation?task_id=...
+2. 第 04 步继续在 Windows/4090 机器上跑，把片段拷回来做第 05 步。
+   合成那一步只用 CPU 和 ffmpeg，Mac 上没有任何障碍。
+
+如果你自己部署了本地视频服务，把 server.py 放进 hailuo/，
+setup.command 的 do_hailuo 会照旧启动它。
+
+────────────────────────────────────────
+64GB 统一内存上的几条注意
+────────────────────────────────────────
+· macOS 默认只让 GPU 锁住约 3/4 的内存（64GB 上约 48GB）。Flux.2 出
+  1080x1920 时可能顶到这个上限，菜单 M 会执行
+    sudo sysctl -w iogpu.wired_limit_mb=57344
+  要 sudo，重启后失效，不用时不占任何东西。
+· 速度和显存是两回事。M3 Max 出图大约是 4090 的 1/3 到 1/5 快，
+  但不会 OOM，也不用为了塞进 24GB 而降规格。文本推理的差距小得多。
+· 出片仍建议 720x1280，成片前用 Real-ESRGAN 统一超分到 1080x1920。
+· reasoning_effort 照旧：改写剧本给 xhigh，批量切片和写 prompt 用 low。
+· 跨域：llama.cpp 默认允许；ComfyUI 由脚本带 --enable-cors-header "*"。
+
+────────────────────────────────────────
+排错
+────────────────────────────────────────
+· “llama-server 已损坏 / 无法验证开发者”
+  下载来的二进制带 com.apple.quarantine。get-llama-mac.sh 已经会执行
+  xattr -dr com.apple.quarantine llama/，手动补一次也行。
+
+· torch.backends.mps.is_available() 是 False
+  九成是终端在 Rosetta 下。检查：
+    python3 -c "import platform;print(platform.machine())"   # 要 arm64
+  另一成是 venv 建在 x86 的 python 上，删掉 venvs/ 重跑菜单 1。
+
+· ComfyUI 报 “not implemented for MPS”
+  脚本已经导出 PYTORCH_ENABLE_MPS_FALLBACK=1，这类算子会回落到 CPU；
+  如果仍然直接抛错，说明那一步在自定义节点里，升级该节点或换个采样器。
+
+· 出图到一半被系统杀掉
+  先执行菜单 M 抬高 wired limit；仍不行就给 COMFY_EXTRA 加 --lowvram。
+
+· 端口被占
+  菜单 3 会跳过已经在监听的服务。要重启某个服务，先菜单 F 或
+  kill 掉 logs/<名字>.pid 里的进程。
