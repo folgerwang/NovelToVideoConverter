@@ -6,17 +6,20 @@
 #    Slot A  text    Qwen3.8-27B Q4_K_M   ~17GB  :8000  (llama.cpp Metal)
 #    Slot S  text    Qwen3-8B    Q4_K_M    ~5GB  :8001  (faster fallback)
 #    Slot B  images  Flux.2 (ComfyUI/MPS) ~24GB  :7860
-#    Slot C  video   Hailuo               n/a    :9000  (see note below)
+#    Slot C  video   MiniMax-H3 via h3.c  ~36GB  :9000
 #    Always on       embeddings / TTS / align    :8002 :9100 :9101
 #
 #  The 4090 build makes slots take turns because 24GB of VRAM only fits one
 #  at a time. Here the GPU shares the machine's 64GB, so A and B coexist with
 #  room to spare - set EXCLUSIVE_SLOTS=1 below to get the old kill-first
-#  behaviour back (worth doing on a 16-24GB Mac).
+#  behaviour back (worth doing on a 16-24GB Mac). Slot C is the exception: it
+#  peaks around 36GB on its own and always kicks the other heavy slots out.
 #
-#  Slot C has no local Apple Silicon path: Hailuo's weights want CUDA kernels
-#  that do not exist for Metal. On a Mac, point the console's Hailuo endpoint
-#  at the hosted MiniMax API, or render video on the Windows box.
+#  Slot C runs MiniMax-H3 locally through antirez's h3.c, a native Metal
+#  engine. services/h3_server.py wraps it in the same HTTP shape the console
+#  already speaks to the hosted API, so nothing upstream changes. It is SLOW -
+#  budget tens of minutes per 10s clip - so it is for previewing shots. Point
+#  the console's video endpoint at the MiniMax cloud API for a whole chapter.
 #
 #  Double click in Finder, or:  ./setup.command
 #  ASCII only, LF endings - same rule as setup.bat, kept here so the two
@@ -43,6 +46,7 @@ VENVS="$ROOT/venvs"
 LOGS="$ROOT/logs"
 COMFY="$ROOT/ComfyUI"
 HAILUO_DIR="$ROOT/hailuo"
+H3_DIR="$ROOT/third_party/h3.c"
 LLAMA="$ROOT/llama"
 SERVICES="$ROOT/services"
 export HF_HOME="$MODELS/hf"
@@ -55,6 +59,7 @@ F_SMALL_GGUF="Qwen3-8B-Q4_K_M.gguf"
 M_EMBED="Qwen/Qwen3-Embedding-0.6B"
 M_FLUX="black-forest-labs/FLUX.2-dev"
 M_TTS="FunAudioLLM/CosyVoice2-0.5B"
+M_H3="MiniMaxAI/MiniMax-H3"
 
 # --- ports ----------------------------------------------------------
 # Slot S gets its own port here, unlike the Windows build where it reuses
@@ -94,12 +99,32 @@ ASR_DEVICE="cpu"
 # 1 = kill the other heavy slot before starting one (the 24GB behaviour).
 EXCLUSIVE_SLOTS=0
 
+# --- slot C: MiniMax-H3 through h3.c --------------------------------
+# The engine is a C/Metal program, not a server, so services/h3_server.py
+# queues jobs and speaks the console's API. One render at a time on purpose:
+# it peaks around 36GB and saturates the GPU, so a second job in parallel
+# only makes both slower.
+#
+# The presets below are the quality/time dial. h3.c's own defaults are
+# steps 20, layers 50, reuse 2; 45 layers is a cheap saving with little
+# visible cost. For a quick look at framing, drop to H3_STEPS=4 and add
+# --token-reduction to H3_EXTRA - minutes instead of tens of minutes.
+H3_MODEL="$MODELS/minimax-h3"
+H3_STEPS=20
+H3_LAYERS=45
+H3_REUSE=2
+H3_EXTRA=""
+
 # macOS caps what the GPU may wire down at about 3/4 of RAM. On 64GB that is
 # roughly 48GB, which Flux.2 at 1080x1920 can bump into. Menu option M raises
 # it for the current boot (needs sudo, resets on reboot).
 WIRED_LIMIT_MB=57344
 
-VIDEO_RES="720x1280"
+# Only the bring-your-own hailuo/server.py path reads this. The h3.c path
+# derives its canvas from whatever the console asks for, snapped to the
+# largest legal multiple-of-32 shape with the same aspect ratio. Note 720 is
+# not a multiple of 32, which is why this is 704 and not the Windows value.
+VIDEO_RES="704x1280"
 
 # Metal has no kernel for a handful of ops; without this torch raises instead
 # of quietly running those on the CPU.
@@ -177,7 +202,9 @@ if [ "$#" -gt 0 ]; then
     llm)      do_word=do_llm ;;
     small)    do_word=do_small ;;
     comfy)    do_word=do_comfy ;;
-    hailuo)   do_word=do_hailuo ;;
+    hailuo|video) do_word=do_hailuo ;;
+    geth3)    do_word=do_geth3 ;;
+    h3weights) do_word=do_h3weights ;;
     embed)    do_word=do_embed ;;
     tts)      do_word=do_tts ;;
     asr)      do_word=do_asr ;;
@@ -187,7 +214,7 @@ if [ "$#" -gt 0 ]; then
     *)
       say "unknown command: $1"
       say "try: install hflogin download services llm small comfy hailuo"
-      say "     embed tts asr health stop getllama"
+      say "     embed tts asr health stop getllama geth3 h3weights"
       exit 1 ;;
   esac
 else
@@ -217,14 +244,14 @@ do_install() {
   mkdir -p "$MODELS" "$LOGS" "$VENVS"
 
   blank
-  say "[1/4] llama.cpp (Metal) + Hugging Face CLI"
+  say "[1/5] llama.cpp (Metal) + Hugging Face CLI"
   have_venv llm || "$PY" -m venv "$VENVS/llm"
   "$(venv_py llm)" -m pip install -qU pip
   "$(venv_py llm)" -m pip install -qU "huggingface_hub[cli]" || say "! hf cli install failed"
   do_getllama || say "! llama.cpp download failed - slot A will not start"
 
   blank
-  say "[2/4] venv-audio  (CosyVoice2 / FunASR)"
+  say "[2/5] venv-audio  (CosyVoice2 / FunASR)"
   have_venv audio || "$PY" -m venv "$VENVS/audio"
   "$(venv_py audio)" -m pip install -qU pip
   # On macOS the plain PyPI wheel IS the Metal-capable build - there is no
@@ -235,14 +262,14 @@ do_install() {
   check_mps audio
 
   blank
-  say "[3/4] venv-tools  (ffmpeg helpers / embeddings)"
+  say "[3/5] venv-tools  (ffmpeg helpers / embeddings)"
   have_venv tools || "$PY" -m venv "$VENVS/tools"
   "$(venv_py tools)" -m pip install -qU pip
   "$(venv_py tools)" -m pip install -qU ffmpeg-python pillow requests sentence-transformers fastapi uvicorn
   check_mps tools
 
   blank
-  say "[4/4] ComfyUI"
+  say "[4/5] ComfyUI"
   [ -d "$COMFY" ] || git clone https://github.com/comfyanonymous/ComfyUI "$COMFY"
   have_venv comfy || "$PY" -m venv "$VENVS/comfy"
   "$(venv_py comfy)" -m pip install -qU pip
@@ -253,7 +280,12 @@ do_install() {
   check_mps comfy || say "! slot B will run on CPU and be unusably slow"
 
   blank
+  say "[5/5] h3.c  (slot C - MiniMax-H3 on Metal)"
+  do_geth3 || say "! slot C will not start until h3.c builds"
+
+  blank
   say "Install done. Next: menu L (Hugging Face login), then 2 (download)."
+  say "Slot C weights are a separate ~40GB download: menu V, when you want it."
   pause
 }
 
@@ -435,25 +467,58 @@ do_comfy() {
 }
 
 # ==========================================================
-#  C - video - not a local Mac slot
+#  C - video (MiniMax-H3 through h3.c)
 # ==========================================================
 do_hailuo() {
-  say "Slot C - video.  $VIDEO_RES, port $HAILUO_PORT"
-  if [ ! -f "$HAILUO_DIR/server.py" ]; then
-    say "x $HAILUO_DIR/server.py not found."
-    blank
-    say "There is no local Apple Silicon build of this one: the video models"
-    say "this pipeline targets ship CUDA-only kernels, and Metal has no"
-    say "equivalent. Two ways forward on a Mac:"
-    say "  1. Point the console's Hailuo endpoint at the hosted MiniMax API"
-    say "     (same request shape the console already sends:"
-    say "      POST /v1/video/generations, GET /v1/query/video_generation)."
-    say "  2. Keep step 04 on the Windows/4090 box and bring the clips back"
-    say "     for step 05 - the compositing side is CPU and ffmpeg only."
+  # A hand-rolled deployment wins if you have one - this is the same hook the
+  # Windows build has.
+  if [ -f "$HAILUO_DIR/server.py" ]; then
+    say "Slot C - video.  local deployment in $HAILUO_DIR, port $HAILUO_PORT"
+    exec "$(venv_py llm)" "$HAILUO_DIR/server.py" --port "$HAILUO_PORT" \
+      --cors --resolution "$VIDEO_RES"
+  fi
+
+  [ -x "$H3_DIR/h3" ] || do_geth3
+  if [ ! -x "$H3_DIR/h3" ]; then
+    say "x h3.c is not built. Run menu 1, or:"
+    say "    cd third_party/h3.c && make -j$(sysctl -n hw.ncpu)"
     return 1
   fi
-  exec "$(venv_py llm)" "$HAILUO_DIR/server.py" --port "$HAILUO_PORT" \
-    --cors --resolution "$VIDEO_RES"
+  if [ ! -d "$H3_MODEL" ]; then
+    say "x MiniMax-H3 weights not found at $H3_MODEL"
+    say "  Menu V downloads them (~40GB). Until then, point the console's"
+    say "  video endpoint at the hosted MiniMax API instead - same request"
+    say "  shape, so nothing else changes."
+    return 1
+  fi
+  command -v ffmpeg >/dev/null 2>&1 || say "! ffmpeg missing - h3.c needs it to encode: brew install ffmpeg"
+
+  say "Slot C - video.  MiniMax-H3 on Metal, port $HAILUO_PORT"
+  say "steps $H3_STEPS, layers $H3_LAYERS, reuse $H3_REUSE$H3_EXTRA"
+  say "Tens of minutes per 10s clip. The console polls, so leave it running."
+  exec "$(venv_py tools)" "$SERVICES/h3_server.py" \
+    --port "$HAILUO_PORT" --bin "$H3_DIR/h3" --model "$H3_MODEL" \
+    --out "$ROOT/output/video" \
+    --steps "$H3_STEPS" --layers "$H3_LAYERS" --reuse "$H3_REUSE" $H3_EXTRA
+}
+
+# V - the H3 weights, kept out of menu 2 because they are ~40GB on their own
+do_h3weights() {
+  local hf="$VENVS/llm/bin/hf"
+  [ -x "$hf" ] || { say "x hf CLI missing - run menu 1 first"; pause; return 1; }
+  blank
+  say "$M_H3 -> $H3_MODEL"
+  say "About 40GB. The weights are under MiniMax's community license"
+  say "(commercial use capped by revenue, some countries excluded) - worth"
+  say "reading before anything made with them ships."
+  blank
+  local ans=""
+  read -r -p "  Download now? [y/N]: " ans
+  case "$ans" in
+    y|Y) "$hf" download "$M_H3" --local-dir "$H3_MODEL" || say "! download failed" ;;
+    *)   say "skipped" ;;
+  esac
+  pause
 }
 
 # ==========================================================
@@ -466,7 +531,7 @@ do_health() {
 $SMALL_PORT|small LLM|/v1/models
 $EMBED_PORT|embeddings|/health
 $COMFY_PORT|ComfyUI|/system_stats
-$HAILUO_PORT|Hailuo|/health
+$HAILUO_PORT|video (h3)|/health
 $TTS_PORT|CosyVoice|/health
 $ASR_PORT|align|/health"
   local port label path code
@@ -505,6 +570,9 @@ do_stop() {
   kill_named hailuo
   pkill -f 'llama-server -m' 2>/dev/null
   pkill -f "$COMFY/main.py" 2>/dev/null
+  # h3_server.py's own child: killing the server leaves the render orphaned,
+  # and it holds ~36GB.
+  pkill -f "$H3_DIR/h3 -d" 2>/dev/null
   sleep 1
 }
 
@@ -523,6 +591,30 @@ do_wired() {
 # ==========================================================
 do_getllama() {
   bash "$SCRIPTS/get-llama-mac.sh" "$LLAMA"
+}
+
+# h3.c is a plain C + Metal program: clone, make, done. No venv, no wheels.
+do_geth3() {
+  command -v ffmpeg >/dev/null 2>&1 || say "! ffmpeg missing - h3.c needs it at runtime: brew install ffmpeg"
+  if [ -d "$H3_DIR/.git" ]; then
+    git -C "$H3_DIR" pull --ff-only >/dev/null 2>&1
+  else
+    mkdir -p "$ROOT/third_party"
+    git clone --depth 1 https://github.com/antirez/h3.c "$H3_DIR" || {
+      say "x clone failed - check git and network"; return 1; }
+  fi
+  say "[h3.c] building ..."
+  ( cd "$H3_DIR" && make -j"$(sysctl -n hw.ncpu)" >/dev/null 2>&1 ) || {
+    say "x build failed. Build it by hand to see why:"
+    say "    cd third_party/h3.c && make"
+    return 1; }
+  mkdir -p "$H3_DIR/outputs"
+  [ -x "$H3_DIR/h3" ] || { say "x no h3 binary after make"; return 1; }
+  say "[h3.c] ready: $H3_DIR/h3"
+  # --info maps nothing and generates nothing; it just proves the binary runs
+  # and can see a Metal device.
+  "$H3_DIR/h3" --info -d "$H3_MODEL" 2>/dev/null | head -n 4
+  return 0
 }
 
 # Dependency guards. A venv built by an older run will not have packages
@@ -591,7 +683,8 @@ menu() {
     say " A   Slot A - text     Qwen3.8-27B   script, shots, prompts   :$LLM_PORT"
     say " S   Slot S - small    Qwen3-8B      faster fallback          :$SMALL_PORT"
     say " B   Slot B - images   Flux.2        character and scene plates"
-    say " C   Slot C - video    Hailuo        no local Mac build - see notes"
+    say " C   Slot C - video    MiniMax-H3    local, slow - takes the whole GPU"
+    say " V   Download H3 video weights    ~40GB, separate from menu 2"
     blank
     say " H   Health check      F   Free the GPU      T   Tail a log"
     say " M   Raise GPU memory ceiling            W   Open web console"
@@ -608,7 +701,11 @@ menu() {
       a|A) slot llm    llm    heavy; pause ;;
       s|S) slot small  small  light; pause ;;
       b|B) slot comfy  comfy  heavy; pause ;;
-      c|C) slot hailuo hailuo heavy; sleep 1; tail -n 20 "$LOGS/hailuo.log" 2>/dev/null; pause ;;
+      # Slot C ignores EXCLUSIVE_SLOTS: it peaks near 36GB, so sharing 64GB
+      # with a 27B model and Flux is how you end up swapping.
+      c|C) do_stop; spawn hailuo hailuo; sleep 2
+           tail -n 20 "$LOGS/hailuo.log" 2>/dev/null; pause ;;
+      v|V) do_h3weights ;;
       h|H) do_health ;;
       f|F) do_stop; say "GPU freed."; pause ;;
       t|T) tail_log ;;

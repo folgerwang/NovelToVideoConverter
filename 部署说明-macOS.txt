@@ -35,6 +35,8 @@ Mac 这边全部逻辑在 setup.command 一个文件里。
 setup.command                主菜单（Finder 里双击，或 ./setup.command）
 scripts/get-llama-mac.sh     拉 llama.cpp 的 macos-arm64 预编译包
                              失败时依次退到 brew、源码编译
+services/h3_server.py        档位 C  MiniMax-H3 本地出片  :9000
+third_party/h3.c/            h3.c 引擎（菜单 1 自动 clone + make）
 services/embed_server.py     检索向量  :8002  （--device mps）
 services/tts_server.py       旁白      :9100  （--device cpu）
 services/asr_server.py       对齐      :9101  （--device cpu）
@@ -57,6 +59,7 @@ Pipeline Runner.dc.html      网页控制台
      MPS 没有 fp8 kernel，fp8 权重加载时会被升回 bf16，白下一遍。
 5. 选 3 起常驻服务
 6. 选 W 打开网页控制台
+7. 想在本机出视频，再选 V 下 H3 权重（约 40GB），然后选 C 起档位 C
 
 ────────────────────────────────────────
 与 4090 版的差异一览
@@ -92,21 +95,59 @@ Pipeline Runner.dc.html      网页控制台
   常驻服务不动。
 
 ────────────────────────────────────────
-视频那一档（档位 C）
+视频那一档（档位 C）· MiniMax-H3 本地跑
 ────────────────────────────────────────
-Mac 上没有本地跑法：这条流水线用的视频模型只有 CUDA kernel，Metal 没有
-对应实现，不是显存大小的问题。两条路：
+MiniMax 已经开源 H3 权重，antirez 又写了 h3.c —— Apple Silicon 上的原生
+Metal 推理引擎（MIT）。所以档位 C 现在在 Mac 上能跑，只是慢。
 
-1. 把控制台里 Hailuo 的端点改成 MiniMax 云端 API。控制台发的请求形状本来
-   就是照 MiniMax 写的，不用改代码：
-     POST /v1/video/generations  { model, prompt, first_frame_image,
-                                   duration, resolution }
-     GET  /v1/query/video_generation?task_id=...
-2. 第 04 步继续在 Windows/4090 机器上跑，把片段拷回来做第 05 步。
-   合成那一步只用 CPU 和 ffmpeg，Mac 上没有任何障碍。
+怎么接进现有流水线
+  services/h3_server.py 把 h3.c 包成一个 HTTP 服务，形状和 MiniMax 云端 API
+  一样，网页控制台那边不用改任何东西：
+    POST /v1/video/generations        提交，立刻返回 task_id
+    GET  /v1/query/video_generation   轮询状态
+    GET  /v1/files/<file_id>          取 mp4
+  菜单选 C 就是起这个服务（端口 9000）。想用云端就把控制台里视频端点换成
+  MiniMax 的地址，其余流程完全一致。
 
-如果你自己部署了本地视频服务，把 server.py 放进 hailuo/，
-setup.command 的 do_hailuo 会照旧启动它。
+它替你兜住的两件事
+  1. 分辨率。控制台按云端习惯请求 1080x1920，h3.c 的画布上限是
+     768*1344 个像素、边长必须是 32 的倍数。服务端会自动换算成同比例下
+     最大的合法画布（1080x1920 -> 736x1312），反正成片前还要超分。
+     注意 720 不是 32 的倍数，所以 VIDEO_RES 从 720x1280 改成了 704x1280。
+  2. 时长。H3 是 24fps，帧数只能是 5+17n，所以“10 秒”实际出 243 帧
+     （10.125 秒）。
+
+排队策略
+  一次只跑一段。单段就要吃掉约 36GB 峰值内存并占满 GPU，并行只会一起变慢
+  甚至换页。多提交的任务排队，控制台轮询等着就行。
+  菜单 C 会先 kill 掉档位 A/B —— 这一档不参与"可以并存"那条规则。
+
+有多慢
+  h3.c 自己给的基准是 M5 Max、512x512、22 帧、20 步：约 12-17 秒。
+  我们要的是 736x1312、243 帧，像素×帧数是它的四十倍上下，注意力还是超线性，
+  而且 M3 没有 M5 的 int8 TensorOps，只能走 BF16。
+  按这个推算，一段 10 秒大约要几十分钟；一章 42 段是按天算的。
+  所以本地这条路适合试镜头、看构图，整章还是走云端或者留给 4090。
+
+先跑通再说
+  想快速验证装好了没有，先出一段小的：
+    cd third_party/h3.c
+    ./h3 -d ../../models/minimax-h3 -p "雪地上的红狐" \
+         --width 512 --height 512 --frames 22 --steps 4 -o outputs/t.mp4
+  几秒到几十秒就该出片。控制台那边的超时已经从 12 分钟放宽到 6 小时，
+  轮询也从 3 秒放慢到 15 秒一次。
+
+调质量/速度
+  setup.command 顶部：H3_STEPS（默认 20，4 是预览档，50 是参考质量）、
+  H3_LAYERS（40-50）、H3_REUSE（1 最好，2 是默认）、
+  H3_EXTRA 可以加 --token-reduction（更快，构图可能变）。
+
+许可证
+  引擎 h3.c 是 MIT；权重走 MiniMax 社区许可（按营收设上限、部分国家排除），
+  成片要商用之前自己读一遍。
+
+自己部署的视频服务
+  hailuo/server.py 存在的话，菜单 C 仍然优先起它，行为和 Windows 版一致。
 
 ────────────────────────────────────────
 64GB 统一内存上的几条注意

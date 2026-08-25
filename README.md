@@ -17,6 +17,7 @@
 | `services/embed_server.py` | 检索向量 · OpenAI 兼容 `/v1/embeddings` — `:8002` |
 | `services/tts_server.py` | 旁白 · CosyVoice2 零样本 `/tts` — `:9100` |
 | `services/asr_server.py` | 对齐 · FunASR `/align`，返回字幕时间轴与 SRT — `:9101` |
+| `services/h3_server.py` | 出片 · MiniMax-H3 经 h3.c 本地渲染，接口同 MiniMax 云端 — `:9000`（仅 macOS） |
 | `voices/` | 旁白参考音（`storyteller.wav` + 同名 `.txt`） |
 | `Pipeline Runner.dc.html` | 网页控制台（直连本地接口） |
 | `Novel to Video Studio.dc.html` | 设计稿 / Studio 界面 |
@@ -29,7 +30,7 @@
 | A | Qwen3.8-27B Q4_K_M（llama.cpp） | `:8000` |
 | S | Qwen3-8B（更快的备选） | `:8000`（macOS 上是 `:8001`，可与档位 A 并存） |
 | B | Flux.2（ComfyUI） | `:7860` |
-| C | Hailuo 视频（需自备 `hailuo/server.py`） | `:9000` |
+| C | Hailuo 视频（需自备 `hailuo/server.py`）；macOS 上默认走 MiniMax-H3 + h3.c | `:9000` |
 | 常驻 | 检索 / 旁白 / 对齐（纯 CPU） | `:8002` `:9100` `:9101` |
 
 `setup.bat` / `setup.command` 都可以直接带命令字调用，例如 `setup.bat health`、`./setup.command llm`。
@@ -49,8 +50,9 @@
 4. 选 `2` 下载权重 —— 与 4090 相反，Mac 上要 bf16 版 unet，MPS 没有 fp8 kernel
 
 与 4090 版的主要差别：显存不再是独立一块，档位 A/B 可以同时开着；
-上下文从 16K 提到 32K；小模型独占 `:8001`；档位 C（视频）在 Apple Silicon
-上没有本地实现，走 MiniMax 云端 API 或留在 Windows 机器上跑。
+上下文从 16K 提到 32K；小模型独占 `:8001`；档位 C 走 MiniMax-H3 + h3.c
+本地出片（菜单 `V` 下权重，`C` 起服务），能跑但很慢——一段 10 秒几十分钟，
+整章仍建议走 MiniMax 云端 API 或留给 4090。
 
 ## 环境要求
 

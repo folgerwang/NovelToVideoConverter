@@ -183,7 +183,7 @@
         <div class="field" style="margin-bottom:9px;"><label>Hailuo 视频</label><input class="input" value="{{ epHailuo }}" onChange="{{ setEpHailuo }}"></div>
         <div class="field"><label>CosyVoice 2</label><input class="input" value="{{ epTts }}" onChange="{{ setEpTts }}"></div>
         <button class="btn btn-secondary btn-block" onClick="{{ saveEndpoints }}">保存端点</button>
-        <div style="font-size:11px; line-height:1.8; color:color-mix(in srgb, var(--color-text) 55%, transparent); margin-top:10px;">先跑 setup.bat 的 [4] 启动服务。vLLM 需带 --allowed-origins 才允许网页跨域调用。</div>
+        <div style="font-size:11px; line-height:1.8; color:color-mix(in srgb, var(--color-text) 55%, transparent); margin-top:10px;">Windows 跑 setup.bat、macOS 跑 setup.command 起服务。视频端点：云端填 MiniMax API，本机跑 h3.c 就保持 127.0.0.1:9000（services/h3_server.py 会转成同一套接口）。</div>
       </div>
 
       <div style="border:1px solid var(--color-divider); border-radius:var(--radius-md); padding:14px;">
@@ -313,18 +313,28 @@ class Component extends DCLogic {
     const j = await r.json();
     const task = j.task_id || j.id;
     if (!task) return j.video_url || j.file_url;
-    for (let i = 0; i < 240; i++) {
-      await sleep(3000);
+    // 云端一段十几分钟就够，本地 h3.c 出一段 10 秒要几十分钟，
+    // 所以按时间封顶（默认 6 小时），并且前一分钟密集轮询、之后放慢到 15 秒一次。
+    const t0 = Date.now();
+    const limitMs = (Number(this.state.videoTimeoutMin) || 360) * 60000;
+    let i = 0, lastLog = 0;
+    while (Date.now() - t0 < limitMs) {
+      i++;
+      await sleep(i <= 20 ? 3000 : 15000);
+      const secs = Math.round((Date.now() - t0) / 1000);
       const q = await (await fetch(base + "/v1/query/video_generation?task_id=" + encodeURIComponent(task))).json();
       const st = (q.status || q.task_status || "").toLowerCase();
       if (st === "success" || st === "finished" || q.video_url || q.file_url) {
-        this.log("片段完成 · " + label + "（" + (i * 3) + "s）");
+        this.log("片段完成 · " + label + "（" + secs + "s）");
         return q.video_url || q.file_url || (base + "/v1/files/" + (q.file_id || task));
       }
-      if (st === "fail" || st === "failed") throw new Error("Hailuo 任务失败 · " + label);
-      if (i % 5 === 0) this.setStep("video", "渲染中 " + label + " · " + (i * 3) + "s");
+      if (st === "fail" || st === "failed") throw new Error("视频任务失败 · " + label + (q.error ? " · " + q.error : ""));
+      if (secs - lastLog >= 30) {
+        lastLog = secs;
+        this.setStep("video", "渲染中 " + label + " · " + secs + "s" + (st === "queued" ? "（排队中）" : ""));
+      }
     }
-    throw new Error("Hailuo 超时 · " + label);
+    throw new Error("视频超时 · " + label);
   }
 
   guard(key, fn) {
