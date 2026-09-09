@@ -42,6 +42,26 @@ set "LLAMA=%ROOT%\llama"
 set "SERVICES=%ROOT%\services"
 set "HF_HOME=%MODELS%\hf"
 
+rem --- web console ----------------------------------------------------
+rem The console cannot be opened as a file:// URL. The dc runtime inside
+rem support.js re-reads its own source with fetch(location.href) while it
+rem boots, and browsers refuse that on file://, so the page comes up
+rem blank. Menu W therefore serves it over HTTP instead of handing the
+rem file to the browser. services\web_server.py is stdlib only - no venv,
+rem so it comes up even before menu 1 has run.
+rem
+rem BIND_LAN=0  everything listens on 127.0.0.1 - this PC only.
+rem BIND_LAN=1  the console AND the model services bind 0.0.0.0, so the
+rem             pipeline can be driven from a phone or another machine on
+rem             this network. The console's endpoint fields follow the
+rem             page's own address, so they point back here by themselves.
+rem             Nothing has a password and CORS is already "*" - only do
+rem             this on a network you trust. For anything wider, put a
+rem             tunnel in front rather than opening a port.
+set "WEB_PORT=8080"
+set "BIND_LAN=0"
+if "%BIND_LAN%"=="1" (set "BIND_HOST=0.0.0.0") else (set "BIND_HOST=127.0.0.1")
+
 rem --- slot A runtime -------------------------------------------------
 rem vLLM is Linux-only: PyPI publishes manylinux wheels and nothing else,
 rem so pip falls back to the sdist, the CUDA extensions never build, and
@@ -92,13 +112,14 @@ if /I "%~1"=="hailuo"   goto do_hailuo
 if /I "%~1"=="embed"    goto do_embed
 if /I "%~1"=="tts"      goto do_tts
 if /I "%~1"=="asr"      goto do_asr
+if /I "%~1"=="web"      goto do_web
 if /I "%~1"=="health"   goto do_health
 if /I "%~1"=="stop"     goto do_stop
 if /I "%~1"=="getllama" goto do_getllama
 if /I "%~1"=="gettorch" goto do_gettorch_cmd
 echo   unknown command: %~1
 echo   try: install hflogin download services llm small comfy hailuo
-echo        embed tts asr health stop getllama gettorch
+echo        embed tts asr web health stop getllama gettorch
 exit /b 1
 
 rem ==========================================================
@@ -121,7 +142,7 @@ echo    C   Slot C - video    Hailuo        10 second clips
 echo    S   Slot A - small    Qwen3-8B      faster fallback
 echo.
 echo    H   Health check            F   Free the GPU
-echo    W   Open web console        Q   Quit
+echo    W   Open web console :%WEB_PORT%   Q   Quit
 echo   --------------------------------------------------------
 echo.
 set "CH="
@@ -136,7 +157,7 @@ if /I "%CH%"=="C" goto slot_c
 if /I "%CH%"=="S" goto slot_s
 if /I "%CH%"=="H" call :do_health & goto menu
 if /I "%CH%"=="F" call :do_stop & echo   GPU freed. & pause & goto menu
-if /I "%CH%"=="W" start "" "%ROOT%\Pipeline Runner.dc.html" & goto menu
+if /I "%CH%"=="W" call :do_openweb & goto menu
 if /I "%CH%"=="Q" exit /b 0
 goto menu
 
@@ -375,20 +396,48 @@ goto :eof
 :do_embed
 title Embed CPU
 call "%VENVS%\tools\Scripts\activate.bat"
-python "%SERVICES%\embed_server.py" --port 8002
+python "%SERVICES%\embed_server.py" --host %BIND_HOST% --port 8002
 exit /b 0
 
 :do_tts
 title CosyVoice2 TTS
 call "%VENVS%\audio\Scripts\activate.bat"
-python "%SERVICES%\tts_server.py" --model "%MODELS%\cosyvoice2" --port 9100 --device cpu
+python "%SERVICES%\tts_server.py" --host %BIND_HOST% --model "%MODELS%\cosyvoice2" --port 9100 --device cpu
 exit /b 0
 
 :do_asr
 title FunASR align
 call "%VENVS%\audio\Scripts\activate.bat"
-python "%SERVICES%\asr_server.py" --port 9101 --device cpu
+python "%SERVICES%\asr_server.py" --host %BIND_HOST% --port 9101 --device cpu
 exit /b 0
+
+:do_web
+title Bookreel web console
+where python >nul 2>&1 || (echo   x python not found - the console server needs it & pause & exit /b 1)
+python "%SERVICES%\web_server.py" --host %BIND_HOST% --port %WEB_PORT%
+exit /b 0
+
+rem  W - bring the console up, then open it. The page needs a real HTTP
+rem  origin, so start the server first if nothing is on the port yet.
+:do_openweb
+echo.
+call :busy %WEB_PORT%
+if not errorlevel 1 goto openweb_up
+start "Bookreel web console" cmd /k ""%SELF%" web"
+rem let it bind before the browser asks for the page
+ping -n 3 127.0.0.1 >nul
+:openweb_up
+echo   local:  http://127.0.0.1:%WEB_PORT%/Pipeline%%20Runner.dc.html
+if "%BIND_LAN%"=="1" (
+  echo   remote: same port on this PC's LAN address - the server window prints it
+  echo   The model services are on the LAN too, with no password on any of them.
+) else (
+  echo   This PC only. Set BIND_LAN=1 near the top of this file and restart
+  echo   the services to reach it from a phone or another machine.
+)
+start "" "http://127.0.0.1:%WEB_PORT%/Pipeline%%20Runner.dc.html"
+pause
+goto :eof
 
 rem ==========================================================
 rem  A / S - text slots (llama.cpp)
@@ -401,7 +450,7 @@ if not exist "%LLAMA%\llama-server.exe" goto llm_noserver
 if not exist "%GGUF%" goto llm_nomodel
 echo Slot A - text.  %F_MAIN_GGUF%, ctx %MAIN_CTX%, port 8000
 echo 262K native context does not fit in 24GB of KV cache - feed by chapter.
-"%LLAMA%\llama-server.exe" -m "%GGUF%" --host 127.0.0.1 --port 8000 --alias qwen3.8-27b -ngl 99 -c %MAIN_CTX% --parallel 1 --jinja --no-warmup %KV_FLAGS%
+"%LLAMA%\llama-server.exe" -m "%GGUF%" --host %BIND_HOST% --port 8000 --alias qwen3.8-27b -ngl 99 -c %MAIN_CTX% --parallel 1 --jinja --no-warmup %KV_FLAGS%
 pause
 exit /b 0
 
@@ -413,7 +462,7 @@ if not exist "%LLAMA%\llama-server.exe" goto llm_noserver
 if not exist "%GGUF%" goto llm_nomodel
 echo Fallback slot - Qwen3-8B on port 8000 (faster, weaker).
 echo Same alias as the 27B so the web console needs no change.
-"%LLAMA%\llama-server.exe" -m "%GGUF%" --host 127.0.0.1 --port 8000 --alias qwen3.8-27b -ngl 99 -c %SMALL_CTX% --parallel 2 --jinja --no-warmup %KV_FLAGS%
+"%LLAMA%\llama-server.exe" -m "%GGUF%" --host %BIND_HOST% --port 8000 --alias qwen3.8-27b -ngl 99 -c %SMALL_CTX% --parallel 2 --jinja --no-warmup %KV_FLAGS%
 pause
 exit /b 0
 
@@ -447,7 +496,9 @@ if errorlevel 1 goto comfy_nocuda
 call "%VENVS%\comfy\Scripts\activate.bat"
 :comfy_run
 echo Slot B - images.  Flux.2 fp8, port 7860
-python "%COMFY%\main.py" --port 7860 --enable-cors-header "*" --fp8_e4m3fn-unet --lowvram
+set "COMFY_LISTEN="
+if "%BIND_LAN%"=="1" set "COMFY_LISTEN=--listen 0.0.0.0"
+python "%COMFY%\main.py" --port 7860 --enable-cors-header "*" %COMFY_LISTEN% --fp8_e4m3fn-unet --lowvram
 pause
 exit /b 0
 :comfy_nocuda
@@ -488,6 +539,7 @@ curl -s -o nul -w "  :7860 ComfyUI    HTTP %%{http_code}\n" http://127.0.0.1:786
 curl -s -o nul -w "  :9000 Hailuo     HTTP %%{http_code}\n" http://127.0.0.1:9000/health
 curl -s -o nul -w "  :9100 CosyVoice  HTTP %%{http_code}\n" http://127.0.0.1:9100/health
 curl -s -o nul -w "  :9101 align      HTTP %%{http_code}\n" http://127.0.0.1:9101/health
+curl -s -o nul -w "  :%WEB_PORT% web console HTTP %%{http_code}\n" http://127.0.0.1:%WEB_PORT%/
 echo.
 nvidia-smi --query-gpu=name,memory.used,memory.total,utilization.gpu --format=csv
 pause
@@ -581,5 +633,5 @@ goto :eof
 
 rem  :busy <port> - errorlevel 0 when something is LISTENING on it
 :busy
-netstat -ano | findstr /c:"127.0.0.1:%~1" | findstr /c:"LISTENING" >nul 2>&1
+netstat -ano | findstr /c:"127.0.0.1:%~1" /c:"0.0.0.0:%~1" | findstr /c:"LISTENING" >nul 2>&1
 goto :eof

@@ -72,6 +72,24 @@ COMFY_PORT=7860
 HAILUO_PORT=9000
 TTS_PORT=9100
 ASR_PORT=9101
+WEB_PORT=8080
+
+# --- web console ----------------------------------------------------
+# The page cannot be opened as a file:// URL: the dc runtime in support.js
+# re-reads its own source with fetch(location.href) while booting, and
+# browsers refuse that on file://, so it comes up blank. Menu W therefore
+# serves it over HTTP. services/web_server.py is stdlib-only (no venv) and
+# hands out only the handful of files the page needs.
+#
+# BIND_LAN=0  everything listens on 127.0.0.1 - this Mac only.
+# BIND_LAN=1  the console AND the model services bind 0.0.0.0, so you can
+#             drive the pipeline from a phone or another machine here. The
+#             console's endpoint fields follow the page's own address, so
+#             they point back at this Mac with nothing to type.
+#             There is no password on any of it and CORS is already "*", so
+#             only do this on a network you trust. For anything wider, put a
+#             tunnel or a reverse proxy in front rather than opening a port.
+BIND_LAN=0
 
 # --- 64GB unified tunables ------------------------------------------
 # Q4_K_M weights are 16.4GB. KV cache is about 260KB per token at 63 layers,
@@ -142,6 +160,25 @@ pause() { printf '\n  '; read -r -p "press return " _ ; }
 # 0 when something is listening on the port
 busy() { lsof -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1; }
 
+# What the servers should listen on. See BIND_LAN above.
+bind_host() { if [ "$BIND_LAN" = "1" ]; then printf '0.0.0.0'; else printf '127.0.0.1'; fi; }
+
+# The address to reach this Mac at, for printing and for opening a browser.
+# connect() on a UDP socket sends nothing; it just picks the outbound route.
+lan_ip() {
+  "${PY:-python3}" - <<'PYIP' 2>/dev/null
+import socket
+s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+try:
+    s.connect(("192.0.2.1", 9))
+    print(s.getsockname()[0])
+except OSError:
+    pass
+finally:
+    s.close()
+PYIP
+}
+
 need_python() {
   local c
   for c in python3.12 python3.11 python3; do
@@ -208,13 +245,14 @@ if [ "$#" -gt 0 ]; then
     embed)    do_word=do_embed ;;
     tts)      do_word=do_tts ;;
     asr)      do_word=do_asr ;;
+    web)      do_word=do_web ;;
     health)   do_word=do_health ;;
     stop)     do_word=do_stop ;;
     getllama) do_word=do_getllama ;;
     *)
       say "unknown command: $1"
       say "try: install hflogin download services llm small comfy hailuo"
-      say "     embed tts asr health stop getllama geth3 h3weights"
+      say "     embed tts asr web health stop getllama geth3 h3weights"
       exit 1 ;;
   esac
 else
@@ -285,7 +323,7 @@ do_install() {
 
   blank
   say "Install done. Next: menu L (Hugging Face login), then 2 (download)."
-  say "Slot C weights are a separate ~40GB download: menu V, when you want it."
+  say "Slot C weights are a separate ~144GB download: menu V, when you want it."
   pause
 }
 
@@ -409,17 +447,27 @@ svc() {
 
 do_embed() {
   exec "$(venv_py tools)" "$SERVICES/embed_server.py" \
+    --host "$(bind_host)" \
     --port "$EMBED_PORT" --model "$MODELS/qwen3-embedding" --device "$EMBED_DEVICE"
 }
 
 do_tts() {
   exec "$(venv_py audio)" "$SERVICES/tts_server.py" \
+    --host "$(bind_host)" \
     --model "$MODELS/cosyvoice2" --port "$TTS_PORT" --device "$TTS_DEVICE"
 }
 
 do_asr() {
   exec "$(venv_py audio)" "$SERVICES/asr_server.py" \
+    --host "$(bind_host)" \
     --port "$ASR_PORT" --device "$ASR_DEVICE"
+}
+
+# The console itself. Stdlib python, so this runs before any venv exists -
+# which is the point: it is the one thing that should always come up.
+do_web() {
+  need_python || return 1
+  exec "$PY" "$SERVICES/web_server.py" --host "$(bind_host)" --port "$WEB_PORT"
 }
 
 # ==========================================================
@@ -433,7 +481,7 @@ do_llm() {
   say "Slot A - text.  $F_MAIN_GGUF, ctx $MAIN_CTX, port $LLM_PORT"
   # -ngl 99 offloads every layer to Metal; the macOS build has no other
   # backend to fall back to, so this is just "use the GPU".
-  exec "$LLAMA/llama-server" -m "$gguf" --host 127.0.0.1 --port "$LLM_PORT" \
+  exec "$LLAMA/llama-server" -m "$gguf" --host "$(bind_host)" --port "$LLM_PORT" \
     --alias qwen3.8-27b -ngl 99 -c "$MAIN_CTX" --parallel 1 --jinja --no-warmup $KV_FLAGS
 }
 
@@ -445,7 +493,7 @@ do_small() {
   say "Slot S - Qwen3-8B on port $SMALL_PORT (faster, weaker)."
   say "Its own port, so it can sit beside the 27B - that is what the console's"
   say "small-model field already points at."
-  exec "$LLAMA/llama-server" -m "$gguf" --host 127.0.0.1 --port "$SMALL_PORT" \
+  exec "$LLAMA/llama-server" -m "$gguf" --host "$(bind_host)" --port "$SMALL_PORT" \
     --alias qwen3-8b -ngl 99 -c "$SMALL_CTX" --parallel 2 --jinja --no-warmup $KV_FLAGS
 }
 
@@ -463,7 +511,10 @@ do_comfy() {
   say "Slot B - images.  Flux.2 on Metal, port $COMFY_PORT"
   say "Expect roughly 3-5x the wall clock of a 4090 per image; memory is the"
   say "part that stops being a problem here, not speed."
-  exec "$p" "$COMFY/main.py" --port "$COMFY_PORT" --enable-cors-header "*" $COMFY_EXTRA
+  # ComfyUI spells it --listen, and only takes the flag when it should bind wide
+  local listen=""
+  [ "$BIND_LAN" = "1" ] && listen="--listen 0.0.0.0"
+  exec "$p" "$COMFY/main.py" --port "$COMFY_PORT" --enable-cors-header "*" $listen $COMFY_EXTRA
 }
 
 # ==========================================================
@@ -486,7 +537,7 @@ do_hailuo() {
   fi
   if [ ! -d "$H3_MODEL" ]; then
     say "x MiniMax-H3 weights not found at $H3_MODEL"
-    say "  Menu V downloads them (~40GB). Until then, point the console's"
+    say "  Menu V downloads them (~144GB). Until then, point the console's"
     say "  video endpoint at the hosted MiniMax API instead - same request"
     say "  shape, so nothing else changes."
     return 1
@@ -497,25 +548,58 @@ do_hailuo() {
   say "steps $H3_STEPS, layers $H3_LAYERS, reuse $H3_REUSE$H3_EXTRA"
   say "Tens of minutes per 10s clip. The console polls, so leave it running."
   exec "$(venv_py tools)" "$SERVICES/h3_server.py" \
+    --host "$(bind_host)" \
     --port "$HAILUO_PORT" --bin "$H3_DIR/h3" --model "$H3_MODEL" \
     --out "$ROOT/output/video" \
     --steps "$H3_STEPS" --layers "$H3_LAYERS" --reuse "$H3_REUSE" $H3_EXTRA
 }
 
-# V - the H3 weights, kept out of menu 2 because they are ~40GB on their own
+# V - the H3 weights, kept out of menu 2 because they are ~144GB on their own.
+#
+# The Hub snapshot is 498GB, but h3.c only ever opens two of its directories
+# and this project only ever needs one:
+#
+#   FL2VA/    144GB  REQUIRED. h3.c hard-requires FL2VA/transformer/config.json,
+#                    FL2VA/tokenizer/tokenizer.json, and inventories
+#                    FL2VA/{text_encoder,transformer,video_vae/source,audio_vae}.
+#   Ref2VA/   144GB  optional, and unreachable from here: it is selected only by
+#                    ordered image references (h3.c's --ref-image), while
+#                    services/h3_server.py passes --first-frame, and h3.c
+#                    refuses to combine frame anchors with Ref2VA references.
+#   the rest  210GB  diffusers-format copies of the same weights for the Python
+#                    pipeline. h3.c never opens them.
+#
+# Hence --include "FL2VA/*". Dropping the filter costs 354GB and buys nothing.
+# It used to say 40GB here, which was wrong by more than a factor of three even
+# against the filtered download.
 do_h3weights() {
   local hf="$VENVS/llm/bin/hf"
   [ -x "$hf" ] || { say "x hf CLI missing - run menu 1 first"; pause; return 1; }
   blank
-  say "$M_H3 -> $H3_MODEL"
-  say "About 40GB. The weights are under MiniMax's community license"
-  say "(commercial use capped by revenue, some countries excluded) - worth"
-  say "reading before anything made with them ships."
+  say "$M_H3  ->  $H3_MODEL"
+  say "About 144GB - the FL2VA checkpoint, which is the only part h3.c reads"
+  say "on this path. The full snapshot is 498GB; the other 354GB is the"
+  say "optional Ref2VA checkpoint plus diffusers copies, both skipped."
+  say "The weights are under MiniMax's community license (commercial use"
+  say "capped by revenue, some countries excluded) - worth reading before"
+  say "anything made with them ships."
   blank
+  # df -g reports whole GB on macOS. Leave room to write alongside the download.
+  local avail=""
+  avail="$(df -g "$ROOT" 2>/dev/null | awk 'NR==2{print $4}')"
+  case "$avail" in
+    ''|*[!0-9]*) : ;;
+    *) if [ "$avail" -lt 170 ]; then
+         say "! only ${avail}GB free on this volume. 144GB of weights plus"
+         say "  headroom will not fit comfortably - free some space first."
+         blank
+       fi ;;
+  esac
   local ans=""
   read -r -p "  Download now? [y/N]: " ans
   case "$ans" in
-    y|Y) "$hf" download "$M_H3" --local-dir "$H3_MODEL" || say "! download failed" ;;
+    y|Y) "$hf" download "$M_H3" --include "FL2VA/*" --local-dir "$H3_MODEL" \
+           || say "! download failed" ;;
     *)   say "skipped" ;;
   esac
   pause
@@ -533,7 +617,8 @@ $EMBED_PORT|embeddings|/health
 $COMFY_PORT|ComfyUI|/system_stats
 $HAILUO_PORT|video (h3)|/health
 $TTS_PORT|CosyVoice|/health
-$ASR_PORT|align|/health"
+$ASR_PORT|align|/health
+$WEB_PORT|web console|/"
   local port label path code
   while IFS='|' read -r port label path; do
     [ -n "$port" ] || continue
@@ -545,7 +630,7 @@ $ASR_PORT|align|/health"
   # There is no nvidia-smi here: on unified memory the GPU's footprint is
   # just the process RSS, so report that instead of a VRAM figure.
   local pid name
-  for name in llm small comfy hailuo embed tts asr; do
+  for name in llm small comfy hailuo embed tts asr web; do
     [ -f "$LOGS/$name.pid" ] || continue
     pid="$(cat "$LOGS/$name.pid")"
     if kill -0 "$pid" 2>/dev/null; then
@@ -684,10 +769,10 @@ menu() {
     say " S   Slot S - small    Qwen3-8B      faster fallback          :$SMALL_PORT"
     say " B   Slot B - images   Flux.2        character and scene plates"
     say " C   Slot C - video    MiniMax-H3    local, slow - takes the whole GPU"
-    say " V   Download H3 video weights    ~40GB, separate from menu 2"
+    say " V   Download H3 video weights    ~144GB, separate from menu 2"
     blank
     say " H   Health check      F   Free the GPU      T   Tail a log"
-    say " M   Raise GPU memory ceiling            W   Open web console"
+    say " M   Raise GPU memory ceiling            W   Open web console  :$WEB_PORT"
     say " Q   Quit"
     say "--------------------------------------------------------"
     blank
@@ -710,10 +795,36 @@ menu() {
       f|F) do_stop; say "GPU freed."; pause ;;
       t|T) tail_log ;;
       m|M) do_wired ;;
-      w|W) open "$ROOT/Pipeline Runner.dc.html" ;;
+      w|W) do_openweb ;;
       q|Q) exit 0 ;;
     esac
   done
+}
+
+# W - bring the console up and open it. The page needs an HTTP origin, so
+# this starts the server first if nothing is on the port yet.
+do_openweb() {
+  blank
+  if busy "$WEB_PORT"; then
+    say "web console already serving on $WEB_PORT - left alone"
+  else
+    spawn web web
+    local i=0
+    while [ "$i" -lt 20 ] && ! busy "$WEB_PORT"; do sleep 0.25; i=$((i + 1)); done
+    busy "$WEB_PORT" || { say "x web console did not come up - tail logs/web.log"; pause; return 1; }
+  fi
+  local page="Pipeline%20Runner.dc.html"
+  say "local:  http://127.0.0.1:$WEB_PORT/$page"
+  if [ "$BIND_LAN" = "1" ]; then
+    local ip; ip="$(lan_ip)"
+    [ -n "$ip" ] && say "remote: http://$ip:$WEB_PORT/$page   (same network)"
+    say "Model services are bound to the LAN too - no password on any of them."
+  else
+    say "This Mac only. Set BIND_LAN=1 near the top of this file and restart"
+    say "the services to reach it from a phone or another machine."
+  fi
+  open "http://127.0.0.1:$WEB_PORT/$page"
+  pause
 }
 
 tail_log() {
