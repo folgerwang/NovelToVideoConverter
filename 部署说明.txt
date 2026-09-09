@@ -20,18 +20,22 @@ Python 3.11 或 3.12 最稳。
 ────────────────────────────────────────
 目录
 ────────────────────────────────────────
-setup.bat                 主菜单
-scripts\env.bat           公共路径与参数（要改模型仓库、上下文长度改这里）
-scripts\install.bat       建 venv、装 vLLM / ComfyUI / 音频依赖
-scripts\hf-login.bat      登录 Hugging Face（gated 仓库必需）
-scripts\download.bat      下载权重
-scripts\run-llm.bat       档位 A · Qwen3.8-27B AWQ    :8000
-scripts\run-llm-small.bat 档位 A 备选 · Qwen3-8B AWQ  :8000
-scripts\run-comfy.bat     档位 B · ComfyUI Flux.2     :7860
-scripts\run-hailuo.bat    档位 C · Hailuo 视频        :9000
-scripts\run-light.bat     常驻 CPU 服务（检索 / 旁白 / 对齐）
-scripts\stop.bat          释放显存
-scripts\health.bat        端口与显存体检
+setup.bat                 全部逻辑都在这一个文件里：菜单、安装、下载、
+                          各档位、体检、释放显存。上面那些 .bat 已经在
+                          「把 13 个批处理合并进 setup.bat」时删掉了，
+                          改模型仓库或上下文长度请改 setup.bat 顶部的配置段。
+scripts\get-llama.ps1     拉 llama.cpp 的 Windows CUDA 预编译包
+scripts\get-torch.ps1     装 CUDA 版 torch 并验证 torch.cuda.is_available()
+scripts\cosyvoice-req.txt CosyVoice2 推理依赖（不用上游 requirements.txt）
+scripts\pip-constraints.txt  setuptools<81，供 sdist 构建时找得到 pkg_resources
+services\embed_server.py  检索向量 · OpenAI 兼容 /v1/embeddings   :8002
+services\tts_server.py    旁白 · CosyVoice2 零样本 /tts           :9100
+services\asr_server.py    对齐 · FunASR /align，出字幕时间轴      :9101
+services\web_server.py    网页控制台的静态服务                     :8080
+
+档位 A 走 llama.cpp + GGUF（不是 vLLM，也不是 AWQ）：vLLM 在 Windows 上
+没有轮子，AWQ 那条路已经废弃。菜单里的档位 A / S 都由 setup.bat 直接起
+llama-server。
 Pipeline Runner.dc.html   网页控制台（真调本地接口）
 comfy-flux2-9x16.json     Flux.2 工作流模板，节点名要与你的 ComfyUI 一致
 
@@ -90,5 +94,29 @@ C 是大头，42 段 10 秒片段属于通宵量级，建议按场次分批过�
 · reasoning_effort 收着用：改写剧本给 xhigh，批量切片和写 prompt 用 low
 · 视频降规格：720x1280 出片，成片前用 Real-ESRGAN 统一超分到 1080x1920
 
-跨域：vLLM 默认允许全部来源，无需额外参数；ComfyUI 需要
+跨域：llama.cpp 的 server 默认允许全部来源，无需额外参数；ComfyUI 需要
 --enable-cors-header "*"，脚本里已经带上。
+
+────────────────────────────────────────
+打开控制台 / 远程访问
+────────────────────────────────────────
+菜单 W。它会先起 services\web_server.py，再打开
+http://127.0.0.1:8080/Pipeline%20Runner.dc.html
+
+不要直接双击 Pipeline Runner.dc.html：support.js 里的 dc runtime 启动时会
+fetch(location.href) 把自己的源码再读一遍，file:// 下浏览器不允许这个请求，
+页面会白屏。必须走 HTTP，这就是 web_server.py 存在的理由。它只用标准库，
+不需要 venv，也只交出页面真正引用的那几个文件，不会把 models\、logs\、
+HF token 一并端出去。
+
+想从手机或另一台机器上用：
+  1) 把 setup.bat 顶部的 BIND_LAN 改成 1
+  2) 关掉正在跑的服务窗口，菜单 3 重起常驻服务（重起才会换绑定地址）
+  3) 菜单 W，服务窗口里会打印这台机器的局域网地址
+  4) 手机连同一个网络，浏览器打开那个地址
+控制台里的端点默认跟着页面地址走，会自动指向这台 PC，不用手改 ——
+127.0.0.1 指的是你手上那台设备，不是跑模型的这台，这是最容易踩的坑。
+
+BIND_LAN=1 会把大模型、ComfyUI、视频服务一起绑到 0.0.0.0。它们都没有口令，
+CORS 也是 *，只在信得过的网络里开；要放得更远就在前面加隧道或反代，不要直接
+把端口暴露到公网。用完改回 0 再重起服务。

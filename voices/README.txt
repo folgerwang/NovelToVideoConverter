@@ -1,17 +1,12 @@
-旁白音色 · CosyVoice2 零样本参考音
-===================================
+voices/ -- reference clips for CosyVoice2 (zero-shot only: no built-in speakers).
 
-CosyVoice2-0.5B 没有内置说话人表，每次合成都是零样本克隆。
-所以每个音色需要放两个同名文件在本目录：
+A voice is a PAIR of files:
+    <name>.wav   3-10 s of clean mono speech, 16 kHz or better, no music/noise
+    <name>.txt   the EXACT transcript of that wav, nothing else
 
-    storyteller.wav    3-10 秒干净人声，单声道，16kHz 以上，无背景音乐
-    storyteller.txt    这段录音逐字的文本（UTF-8），标点可省
+The web app asks for the voice named "storyteller".
 
-网页控制台默认调用 voice="storyteller"，所以至少要准备这一对。
-想加音色就再放一对，文件名即音色名，例如 narrator-male.wav / .txt。
-
-自检：
-    curl http://127.0.0.1:9100/voices
-
-参考音质量直接决定输出质量。念一段平稳的旁白最合适，
-不要用带情绪起伏、混响或背景音乐的片段。
+storyteller.wav here is a PLACEHOLDER -- it is CosyVoice's own demo clip
+(a young female voice) shipped with the repo, dropped in so the pipeline is
+testable end to end. Replace both files with your own narrator to change how
+the film sounds; no restart is needed, the server reads the pair per request.

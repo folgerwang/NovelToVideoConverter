@@ -14,14 +14,19 @@
 | `scripts/get-torch.ps1` | 装 CUDA 版 torch，并验证 `torch.cuda.is_available()` |
 | `scripts/cosyvoice-req.txt` | CosyVoice2 推理依赖（不用上游 requirements.txt，见文件内说明） |
 | `scripts/pip-constraints.txt` | `setuptools<81`，供 sdist 构建时找得到 pkg_resources |
-| `services/embed_server.py` | 检索向量 · OpenAI 兼容 `/v1/embeddings` — `:8002` |
+| `services/embed_server.py` | 检索向量 · OpenAI 兼容 `/v1/embeddings` — `:8002`（控制台只体检，不调用；留给外部检索用） |
 | `services/tts_server.py` | 旁白 · CosyVoice2 零样本 `/tts` — `:9100` |
-| `services/asr_server.py` | 对齐 · FunASR `/align`，返回字幕时间轴与 SRT — `:9101` |
+| `services/asr_server.py` | 对齐 · FunASR `/align`，返回字幕时间轴与 SRT — `:9101`（第 05 步拼整章字幕用） |
 | `services/h3_server.py` | 出片 · MiniMax-H3 经 h3.c 本地渲染，接口同 MiniMax 云端 — `:9000`（仅 macOS） |
+| `services/web_server.py` | 网页控制台的静态服务 — `:8080`（只用标准库，不需要 venv） |
 | `voices/` | 旁白参考音（`storyteller.wav` + 同名 `.txt`） |
 | `Pipeline Runner.dc.html` | 网页控制台（直连本地接口） |
-| `Novel to Video Studio.dc.html` | 设计稿 / Studio 界面 |
 | `comfy-flux2-9x16.json` | Flux.2 工作流模板（节点名需与本机 ComfyUI 一致） |
+| `support.js` | 两个 `.dc.html` 的运行时，由设计工具生成 —— 别手改 |
+| `_ds/<uuid>/` | 设计系统的样式与 token 包，两个 `.dc.html` 都 `<link>` 它 |
+
+`support.js` 与 `_ds/` 是设计工具的产物，不是手写代码，但所有 `.dc.html` 都直接引用，删了页面就打不开。
+`_ds/` 的 uuid 目录名由工具决定，重新生成设计系统时会换名字，届时两个 HTML 的引用要一起改。
 
 ## 档位
 
@@ -32,6 +37,28 @@
 | B | Flux.2（ComfyUI） | `:7860` |
 | C | Hailuo 视频（需自备 `hailuo/server.py`）；macOS 上默认走 MiniMax-H3 + h3.c | `:9000` |
 | 常驻 | 检索 / 旁白 / 对齐（纯 CPU） | `:8002` `:9100` `:9101` |
+| 控制台 | 网页界面（`setup` 菜单 `W`） | `:8080` |
+
+## 打开控制台 / 远程访问
+
+菜单 `W`。它会先起 `services/web_server.py`，再用浏览器打开
+`http://127.0.0.1:8080/Pipeline%20Runner.dc.html`。
+
+**不能直接双击 `.dc.html`。** `support.js` 里的 dc runtime 启动时会
+`fetch(location.href)` 把自己的源码再读一遍，浏览器在 `file://` 下拒绝这个请求，
+页面会白屏。所以必须走 HTTP —— 这就是 `web_server.py` 存在的全部理由。
+它只用标准库，因此在跑菜单 1 之前就能起来；也只交出页面真正引用的那几个文件，
+不会把 `models/`、`logs/`、HF token 一起端出去。
+
+想从手机或另一台机器打开：把 `setup.command` / `setup.bat` 顶部的 `BIND_LAN`
+改成 `1`，重起服务，再选 `W`，服务端会打印本机的局域网地址。
+控制台里的端点默认跟着页面地址走 —— 从 `http://192.168.x.x:8080` 打开时，
+它们自动指向 `192.168.x.x`，不用手改（`127.0.0.1` 指的是你手上那台设备，
+不是跑模型的那台，这是远程访问最容易踩的坑）。
+
+`BIND_LAN=1` 会把模型服务一起绑到 `0.0.0.0`。这些服务都没有口令，CORS 也是
+`*`，所以只在信得过的网络里开；要放到更远的地方，前面加隧道或反代，不要直接
+把端口暴露出去。
 
 `setup.bat` / `setup.command` 都可以直接带命令字调用，例如 `setup.bat health`、`./setup.command llm`。
 
@@ -51,7 +78,7 @@
 
 与 4090 版的主要差别：显存不再是独立一块，档位 A/B 可以同时开着；
 上下文从 16K 提到 32K；小模型独占 `:8001`；档位 C 走 MiniMax-H3 + h3.c
-本地出片（菜单 `V` 下权重，`C` 起服务），能跑但很慢——一段 10 秒几十分钟，
+本地出片（菜单 `V` 下权重约 144GB，`C` 起服务），能跑但很慢——一段 10 秒几十分钟，
 整章仍建议走 MiniMax 云端 API 或留给 4090。
 
 ## 环境要求
