@@ -22,6 +22,7 @@ Endpoints
 """
 
 import argparse
+import gc
 import io
 import os
 import sys
@@ -47,6 +48,16 @@ CFG = {"model_path": "", "voices_dir": "", "device": "cpu", "out_dir": "", "save
 _STATE = {"engine": None, "sr": 24000, "error": None}
 _LOCK = threading.Lock()
 _SYNTH_LOCK = threading.Lock()  # CosyVoice is not thread-safe; serialize requests
+
+# Host RAM is the scarce side of this box: the BIOS gives the GPU 96GiB and
+# Linux 31GiB, and ComfyUI holds ~24GiB of that while a clip renders. CosyVoice2
+# resident on top pushed the machine 7GiB into swap and the kernel began
+# killing processes; stopping tts and asr took swap from 7GiB back to 1GiB.
+# Narration and video are different stages of the same run, so the model has no
+# reason to sit there between them. Drop it after this many idle seconds and
+# pay the ~11s reload once per narration batch. 0 disables.
+IDLE_UNLOAD = float(os.environ.get("BOOKREEL_TTS_IDLE_UNLOAD", "300"))
+_LAST_USE = [0.0]
 
 
 def _voice_files(name):
@@ -76,8 +87,27 @@ def _list_voices():
     return out
 
 
+def _reaper():
+    """Release the engine after IDLE_UNLOAD seconds with no synthesis."""
+    while True:
+        time.sleep(30)
+        if IDLE_UNLOAD <= 0:
+            continue
+        with _LOCK:
+            if _STATE["engine"] is None:
+                continue
+            idle = time.time() - _LAST_USE[0]
+            if idle < IDLE_UNLOAD:
+                continue
+            _STATE["engine"] = None
+            print("[tts] idle %.0fs, released CosyVoice2 (reloads on the next call)"
+                  % idle, flush=True)
+        gc.collect()
+
+
 def _load():
     """Import + load CosyVoice2 once, lazily."""
+    _LAST_USE[0] = time.time()
     if _STATE["engine"] is not None or _STATE["error"] is not None:
         return
     with _LOCK:
@@ -128,6 +158,24 @@ def _load():
         _STATE["engine"] = engine
         _STATE["sr"] = int(getattr(engine, "sample_rate", 24000))
         print("[tts] ready in %.1fs, sr=%d" % (time.time() - t0, _STATE["sr"]), flush=True)
+
+
+def _prompt_forms(wav_path):
+    """The reference clip in the order this checkout is likely to accept it.
+
+    Yields at most two candidates; once one has worked _STATE remembers it and
+    every later call goes straight to that one.
+    """
+    def tensor():
+        from cosyvoice.utils.file_utils import load_wav
+        return load_wav(wav_path, 16000)
+
+    form = _STATE.get("prompt_form")
+    if form == "path":
+        return [wav_path]
+    if form == "tensor":
+        return [tensor()]
+    return [wav_path, tensor()]
 
 
 def _to_wav_bytes(tensor, sr):
@@ -207,9 +255,6 @@ def tts(req: TTSRequest):
     with open(txt_path, "r", encoding="utf-8") as fh:
         prompt_text = fh.read().strip()
 
-    from cosyvoice.utils.file_utils import load_wav
-
-    prompt_speech = load_wav(wav_path, 16000)
     speed = float(req.speed or 1.0)
     if not 0.5 <= speed <= 2.0:
         raise HTTPException(status_code=400, detail="speed must be between 0.5 and 2.0")
@@ -218,20 +263,34 @@ def tts(req: TTSRequest):
     chunks = []
     engine = _STATE["engine"]
     with _SYNTH_LOCK:
-        try:
-            if req.instruct:
-                gen = engine.inference_instruct2(
-                    text, req.instruct, prompt_speech, stream=False, speed=speed
-                )
-            else:
-                gen = engine.inference_zero_shot(
-                    text, prompt_text, prompt_speech, stream=False, speed=speed
-                )
-            for piece in gen:
-                chunks.append(piece["tts_speech"])
-        except Exception as exc:  # noqa: BLE001
-            raise HTTPException(status_code=500, detail="synthesis failed: %s" % exc)
+        last = None
+        # Which of the two CosyVoice APIs this checkout speaks. The current
+        # repo wants the reference clip as a PATH and loads it itself, twice,
+        # at 16k for the speaker embedding and 24k for the flow features.
+        # Older revisions wanted a tensor the caller had already loaded at
+        # 16k. Passing the wrong one dies in the frontend, before any
+        # generation, so trying the path first and falling back costs nothing.
+        for prompt_wav in _prompt_forms(wav_path):
+            chunks = []
+            try:
+                if req.instruct:
+                    gen = engine.inference_instruct2(
+                        text, req.instruct, prompt_wav, stream=False, speed=speed
+                    )
+                else:
+                    gen = engine.inference_zero_shot(
+                        text, prompt_text, prompt_wav, stream=False, speed=speed
+                    )
+                for piece in gen:
+                    chunks.append(piece["tts_speech"])
+                _STATE["prompt_form"] = "path" if prompt_wav is wav_path else "tensor"
+                break
+            except Exception as exc:  # noqa: BLE001
+                last = exc
+        else:
+            raise HTTPException(status_code=500, detail="synthesis failed: %s" % last)
 
+    _LAST_USE[0] = time.time()
     if not chunks:
         raise HTTPException(status_code=500, detail="model returned no audio")
 
@@ -325,6 +384,10 @@ def main():
         if _STATE["error"]:
             print("[tts] %s" % _STATE["error"], flush=True)
             sys.exit(1)
+
+    if IDLE_UNLOAD > 0:
+        threading.Thread(target=_reaper, name="tts-idle-unload", daemon=True).start()
+        print("[tts] releases the model after %.0fs idle" % IDLE_UNLOAD, flush=True)
 
     import uvicorn
     uvicorn.run(app, host=args.host, port=args.port, log_level="warning")

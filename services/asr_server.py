@@ -19,6 +19,7 @@ is slow and needs a network connection. Everything after that is local.
 """
 
 import argparse
+import gc
 import os
 import re
 import sys
@@ -67,9 +68,37 @@ _RUN_LOCK = threading.Lock()
 # Split on CJK and latin sentence enders, keeping the punctuation attached.
 _SENT_SPLIT = re.compile(r"(?<=[。！？!?；;\n])")
 _PUNCT = re.compile(r"[\s，。！？、；：“”‘’（）【】《》…—,.!?;:\"'()\[\]<>-]")
+_CLAUSE_SPLIT = re.compile(r"(?<=[，、,：:])")
+# Chinese subtitles get unreadable past ~20 characters on one line.
+SUB_MAX_CHARS = int(os.environ.get("BOOKREEL_SUB_MAX_CHARS", "18"))
+
+# Same reason as tts_server: 31GiB of host RAM against ComfyUI's ~24GiB while a
+# clip renders. fa-zh is smaller than CosyVoice2 but still worth giving back
+# between narration batches; it reloads in seconds. 0 disables.
+IDLE_UNLOAD = float(os.environ.get("BOOKREEL_ASR_IDLE_UNLOAD", "300"))
+_LAST_USE = [0.0]
+
+
+def _reaper():
+    """Release the aligner after IDLE_UNLOAD seconds with no alignment."""
+    while True:
+        time.sleep(30)
+        if IDLE_UNLOAD <= 0:
+            continue
+        with _LOCK:
+            if _STATE["model"] is None:
+                continue
+            idle = time.time() - _LAST_USE[0]
+            if idle < IDLE_UNLOAD:
+                continue
+            _STATE["model"] = None
+            print("[asr] idle %.0fs, released FunASR (reloads on the next call)"
+                  % idle, flush=True)
+        gc.collect()
 
 
 def _load():
+    _LAST_USE[0] = time.time()
     if _STATE["model"] is not None or _STATE["error"] is not None:
         return
     with _LOCK:
@@ -103,7 +132,28 @@ def _load():
 
 def _split_sentences(text: str) -> List[str]:
     parts = [p.strip() for p in _SENT_SPLIT.split(text or "") if p and p.strip()]
-    return parts or ([text.strip()] if text and text.strip() else [])
+    if not parts:
+        parts = [text.strip()] if text and text.strip() else []
+    # One narration sentence can run ten seconds, and that is one subtitle card
+    # nobody can read. Break the long ones again at comma level and pack the
+    # clauses back up to SUB_MAX_CHARS. Timing survives any such split: _align
+    # walks the aligner's per-character stamps and only needs each segment's
+    # non-punctuation character count, which re-splitting does not change.
+    out = []
+    for part in parts:
+        if len(part) <= SUB_MAX_CHARS:
+            out.append(part)
+            continue
+        buf = ""
+        for clause in (c for c in _CLAUSE_SPLIT.split(part) if c):
+            if buf and len(buf) + len(clause) > SUB_MAX_CHARS:
+                out.append(buf)
+                buf = clause
+            else:
+                buf += clause
+        if buf:
+            out.append(buf)
+    return out
 
 
 def _fmt_ts(seconds: float) -> str:
@@ -142,6 +192,7 @@ def _align(audio_path: str, text: str):
         except Exception as exc:  # noqa: BLE001
             raise HTTPException(status_code=500, detail="alignment failed: %s" % exc)
 
+    _LAST_USE[0] = time.time()
     if not res:
         raise HTTPException(status_code=500, detail="aligner returned nothing")
 
@@ -308,6 +359,10 @@ def main():
         if _STATE["error"]:
             print("[asr] %s" % _STATE["error"], flush=True)
             sys.exit(1)
+
+    if IDLE_UNLOAD > 0:
+        threading.Thread(target=_reaper, name="asr-idle-unload", daemon=True).start()
+        print("[asr] releases the model after %.0fs idle" % IDLE_UNLOAD, flush=True)
 
     import uvicorn
     uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
