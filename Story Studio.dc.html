@@ -1,0 +1,1047 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/classical-d362d489-8175-478e-8156-5e2f8f43f744/styles.css">
+<script src="_ds/classical-d362d489-8175-478e-8156-5e2f8f43f744/_ds_bundle.js"></script>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@300;400;500;600&display=swap">
+<style>
+  body { margin:0; font-family:"Lora","Noto Serif SC",serif; }
+  h1,h2,h3,h4,h5,h6 { font-family:"Cormorant Garamond","Noto Serif SC",serif; }
+  a { color: var(--color-accent); text-decoration:none; }
+  .btn, .tag { white-space:nowrap; flex:none; }
+  textarea.input { font-family:inherit; line-height:1.8; resize:vertical; }
+  @keyframes bookreel-slide { 0% { left:-38%; } 100% { left:100%; } }
+  ::-webkit-scrollbar { width:10px; height:10px; }
+  ::-webkit-scrollbar-thumb { background: var(--color-neutral-300); border-radius:6px; }
+</style>
+</helmet>
+
+<div style="min-height:100vh; min-width:1280px; background:var(--color-bg); color:var(--color-text); font-family:'Lora','Noto Serif SC',serif; font-size:14px;">
+
+  <header style="display:flex; align-items:center; gap:18px; padding:16px 26px; border-bottom:1px solid var(--color-divider);">
+    <span style="font-family:'Cormorant Garamond',serif; font-size:24px; color:var(--color-accent);">书影 Bookreel</span>
+    <h3 style="margin:0; font-size:17px; flex:1;">故事工坊 · 第一步：写小说与制作圣经</h3>
+    <span class="tag tag-outline">步骤 1 / 3</span>
+    <span class="tag tag-neutral" title="页面版本，用来确认浏览器拿到的是最新文件">UI r5</span>
+    <span class="tag tag-neutral">只用档位 A（大模型），不加载出图与出片模型</span>
+    <span style="{{ healthStyle }}">{{ healthLabel }}</span>
+    <div style="display:flex; flex-direction:column; gap:4px; min-width:210px;">
+      <div style="display:flex; justify-content:space-between; align-items:baseline; gap:16px; white-space:nowrap; font-size:10.5px; color:color-mix(in srgb, var(--color-text) 55%, transparent);">
+        <span style="overflow:hidden; text-overflow:ellipsis;">显存 · {{ vramName }}</span><span style="font-variant-numeric:tabular-nums; flex:none; {{ vramTextStyle }}">{{ vramText }}</span>
+      </div>
+      <div style="height:4px; background:var(--color-neutral-200); border-radius:2px; overflow:hidden;">
+        <div style="{{ vramBarStyle }}"></div>
+      </div>
+    </div>
+    <button class="btn btn-secondary" onClick="{{ checkHealth }}">体检</button>
+  </header>
+
+  <div style="display:grid; grid-template-columns:360px minmax(0,1fr) 330px; gap:22px; padding:22px 26px 90px; align-items:start;">
+
+    <!-- 1. 基础设定 -->
+    <div style="display:flex; flex-direction:column; gap:16px;">
+      <div style="border:1px solid var(--color-divider); border-radius:var(--radius-md); padding:16px 18px; background:var(--color-neutral-100);">
+        <div style="display:flex; align-items:center; gap:12px; margin-bottom:12px;">
+          <span style="font-family:'Cormorant Garamond',serif; font-size:26px; color:var(--color-accent); line-height:1;">01</span>
+          <h4 style="margin:0; font-size:19px; flex:1;">故事基础与结构</h4>
+        </div>
+        <div style="font-size:12px; line-height:1.8; color:color-mix(in srgb, var(--color-text) 55%, transparent); margin-bottom:12px;">
+          先把故事讲清楚，再让模型展开。这里填的东西会被后面每一次出图、出片的提示词反复引用，所以越具体越好。
+        </div>
+
+        <div class="field" style="margin-bottom:10px;"><label>项目代号（英文/拼音，作为目录名）</label>
+          <input class="input" value="{{ slug }}" onChange="{{ setSlug }}" placeholder="xuemang"></div>
+
+        <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin:-4px 0 12px;">
+          <span style="font-size:11px; color:color-mix(in srgb, var(--color-text) 45%, transparent);">磁盘上已有：</span>
+          <sc-for list="{{ projectRows }}" as="pj" hint-placeholder-count="2">
+            <button class="btn btn-ghost" disabled="{{ anyBusy }}" style="{{ pj.style }}" title="{{ pj.hint }}" onClick="{{ pj.open }}">{{ pj.label }}</button>
+          </sc-for>
+          <span style="font-size:11px; color:var(--color-accent-900);">{{ projectsNote }}</span>
+        </div>
+
+        <div class="field" style="margin-bottom:10px;"><label>故事基础 · 讲清楚背景、主角、困境与走向</label>
+          <textarea class="input" rows="7" value="{{ premise }}" onChange="{{ setPremise }}" placeholder="时代与地点、主角是谁、他要什么、谁挡着、结局大概往哪走…"></textarea></div>
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+          <div class="field"><label>题材</label><input class="input" value="{{ genre }}" onChange="{{ setGenre }}"></div>
+          <div class="field"><label>语言</label><input class="input" value="{{ language }}" onChange="{{ setLanguage }}"></div>
+          <div class="field"><label>章数</label><input class="input" value="{{ chapters }}" onChange="{{ setChapters }}"></div>
+          <div class="field"><label>每章字数</label><input class="input" value="{{ words }}" onChange="{{ setWords }}"></div>
+          <div class="field"><label>每镜秒数</label><input class="input" value="{{ seconds }}" onChange="{{ setSeconds }}"></div>
+          <div class="field"><label>每章最多镜头（0=不限）</label><input class="input" value="{{ maxShots }}" onChange="{{ setMaxShots }}"></div>
+        </div>
+
+        <div class="field" style="margin-top:10px;"><label>统一影像风格</label>
+          <textarea class="input" rows="2" value="{{ style }}" onChange="{{ setStyle }}"></textarea></div>
+
+        <button class="btn btn-primary btn-block" disabled="{{ anyBusy }}" style="{{ bpBtnStyle }}" onClick="{{ runBlueprint }}">{{ bpBtnLabel }}</button>
+        <div style="font-size:11px; line-height:1.8; color:color-mix(in srgb, var(--color-text) 50%, transparent); margin-top:8px;">
+          蓝图是一次高强度推理，27B 上通常要 8-15 分钟。生成后先看一遍再往下走。
+        </div>
+      </div>
+
+      <div style="border:1px solid var(--color-divider); border-radius:var(--radius-md); padding:14px;">
+        <div style="font-size:10px; letter-spacing:0.14em; color:var(--color-accent); margin-bottom:10px;">服务端点</div>
+        <div class="field" style="margin-bottom:9px;"><label>故事引擎 story_server</label><input class="input" value="{{ epStory }}" onChange="{{ setEpStory }}"></div>
+        <button class="btn btn-secondary btn-block" onClick="{{ saveEndpoints }}">保存端点</button>
+        <div style="font-size:11px; line-height:1.8; color:color-mix(in srgb, var(--color-text) 55%, transparent); margin-top:10px;">
+          第一步只需要这一个服务。它不加载出图/出片模型，跑完第一步再起 ComfyUI，显存才不会打架。
+        </div>
+      </div>
+    </div>
+
+    <!-- 2. 蓝图 -->
+    <div style="display:flex; flex-direction:column; gap:16px;">
+      <div style="border:1px solid var(--color-divider); border-radius:var(--radius-md); padding:16px 18px;">
+        <div style="display:flex; align-items:center; gap:12px;">
+          <span style="font-family:'Cormorant Garamond',serif; font-size:26px; color:var(--color-accent); line-height:1;">02</span>
+          <h4 style="margin:0; font-size:19px; flex:1;">制作圣经（蓝图）</h4>
+          <sc-if value="{{ hasBp }}" hint-placeholder-val="{{ true }}"><span class="tag tag-accent">第 {{ bpRevision }} 版</span></sc-if>
+          <span style="{{ s1Style }}">{{ s1State }}</span>
+        </div>
+
+        <sc-if value="{{ hasBp }}" hint-placeholder-val="{{ true }}">
+          <div style="margin-top:14px;">
+            <div style="font-size:20px; font-family:'Cormorant Garamond','Noto Serif SC',serif;">{{ bpTitle }}</div>
+            <div style="font-size:13px; line-height:1.85; color:color-mix(in srgb, var(--color-text) 75%, transparent); margin-top:4px;">{{ bpLogline }}</div>
+            <div style="font-size:12px; line-height:1.9; margin-top:10px; color:color-mix(in srgb, var(--color-text) 65%, transparent);">{{ bpWorld }}</div>
+            <div style="font-size:12px; line-height:1.9; color:color-mix(in srgb, var(--color-text) 65%, transparent);">{{ bpStyle }}</div>
+
+            <div style="font-size:10px; letter-spacing:0.14em; color:var(--color-accent); margin:16px 0 8px;">人物</div>
+            <sc-for list="{{ bpChars }}" as="c" hint-placeholder-count="3">
+              <div style="display:grid; grid-template-columns:120px 1fr; gap:10px; font-size:12.5px; line-height:1.8; margin-bottom:7px;">
+                <span><span class="tag tag-outline">{{ c.id }}</span> {{ c.name }}</span>
+                <span style="color:color-mix(in srgb, var(--color-text) 70%, transparent);">{{ c.line }}</span>
+              </div>
+            </sc-for>
+
+            <div style="font-size:10px; letter-spacing:0.14em; color:var(--color-accent); margin:16px 0 8px;">场景</div>
+            <sc-for list="{{ bpLocs }}" as="l" hint-placeholder-count="3">
+              <div style="display:grid; grid-template-columns:120px 1fr; gap:10px; font-size:12.5px; line-height:1.8; margin-bottom:7px;">
+                <span><span class="tag tag-outline">{{ l.id }}</span> {{ l.name }}</span>
+                <span style="color:color-mix(in srgb, var(--color-text) 70%, transparent);">{{ l.line }}</span>
+              </div>
+            </sc-for>
+
+            <div style="font-size:10px; letter-spacing:0.14em; color:var(--color-accent); margin:16px 0 8px;">章节大纲</div>
+            <sc-for list="{{ bpChapters }}" as="ch" hint-placeholder-count="6">
+              <div style="display:grid; grid-template-columns:34px 1fr; gap:10px; font-size:12.5px; line-height:1.8; margin-bottom:6px;">
+                <span style="font-variant-numeric:tabular-nums; color:var(--color-accent);">{{ ch.n }}</span>
+                <span><b>{{ ch.title }}</b> · <span style="color:color-mix(in srgb, var(--color-text) 65%, transparent);">{{ ch.summary }}</span></span>
+              </div>
+            </sc-for>
+
+            <sc-if value="{{ hasRel }}" hint-placeholder-val="{{ true }}">
+              <div style="font-size:10px; letter-spacing:0.14em; color:var(--color-accent); margin:16px 0 8px;">派系（决定同阵营共用的服饰）</div>
+              <sc-for list="{{ relFactions }}" as="f" hint-placeholder-count="2">
+                <div style="display:grid; grid-template-columns:120px 1fr; gap:10px; font-size:12.5px; line-height:1.8; margin-bottom:7px;">
+                  <span><span class="tag tag-outline">{{ f.stance }}</span> {{ f.name }}</span>
+                  <span style="color:color-mix(in srgb, var(--color-text) 70%, transparent);">{{ f.line }}</span>
+                </div>
+              </sc-for>
+
+              <div style="font-size:10px; letter-spacing:0.14em; color:var(--color-accent); margin:16px 0 8px;">人物关系（血缘一项会写进两人的参考图）</div>
+              <sc-for list="{{ relEdges }}" as="e" hint-placeholder-count="5">
+                <div style="display:grid; grid-template-columns:150px 1fr; gap:10px; font-size:12.5px; line-height:1.8; margin-bottom:7px;">
+                  <span><span class="tag tag-outline">{{ e.kind }}</span> {{ e.pair }}</span>
+                  <span style="color:color-mix(in srgb, var(--color-text) 70%, transparent);">{{ e.line }}</span>
+                </div>
+              </sc-for>
+            </sc-if>
+
+            <sc-if value="{{ showPrompts }}" hint-placeholder-val="{{ false }}">
+              <div style="font-size:10px; letter-spacing:0.14em; color:var(--color-accent); margin:16px 0 8px;">资产提示词（第二步照这个出图）</div>
+              <sc-for list="{{ promptRows }}" as="pr" hint-placeholder-count="4">
+                <div style="display:grid; grid-template-columns:96px 1fr; gap:10px; font-size:12px; line-height:1.75; margin-bottom:8px; padding-bottom:8px; border-bottom:1px solid var(--color-divider);">
+                  <span><span class="tag tag-outline">{{ pr.kind }}</span> {{ pr.label }}</span>
+                  <span style="color:color-mix(in srgb, var(--color-text) 70%, transparent);">{{ pr.prompt }}</span>
+                </div>
+              </sc-for>
+            </sc-if>
+
+            <sc-if value="{{ showRaw }}" hint-placeholder-val="{{ false }}">
+              <div style="margin-top:14px; background:#14120f; border-radius:6px; padding:12px; max-height:460px; overflow:auto;">
+                <pre style="margin:0; font-family:ui-monospace,'Cascadia Mono',monospace; font-size:11px; line-height:1.6; color:#cbbf9f; white-space:pre-wrap; word-break:break-all;">{{ rawJson }}</pre>
+              </div>
+            </sc-if>
+
+            <hr class="hr">
+            <div class="field"><label>不满意就写在这里，改完再往下走</label>
+              <textarea class="input" rows="3" value="{{ notes }}" onChange="{{ setNotes }}" placeholder="例：主角改成女性；把第 3 章的码头戏挪到夜里；配乐去掉古筝…"></textarea></div>
+            <div style="display:flex; gap:8px; margin-top:12px; flex-wrap:wrap;">
+              <button class="btn btn-ghost" onClick="{{ toggleRaw }}">{{ rawLabel }}</button>
+              <button class="btn btn-secondary" disabled="{{ anyBusy }}" style="{{ offStyle }}" onClick="{{ runRevise }}">应用修改意见</button>
+              <button class="btn btn-primary" disabled="{{ anyBusy }}" style="{{ offStyle }}" onClick="{{ runAll }}">{{ runAllLabel }}</button>
+              <button class="btn btn-secondary" disabled="{{ anyBusy }}" style="{{ offStyle }}" onClick="{{ runRelations }}">{{ relBtnLabel }}</button>
+              <span style="{{ relBadgeStyle }}">{{ relBadge }}</span>
+              <button class="btn btn-secondary" disabled="{{ anyBusy }}" style="{{ offStyle }}" onClick="{{ runAssets }}">生成资产提示词</button>
+              <span style="{{ assetBadgeStyle }}">{{ assetBadge }}</span>
+              <button class="btn btn-ghost" disabled="{{ anyBusy }}" style="{{ offStyle }}" onClick="{{ togglePrompts }}">{{ promptsLabel }}</button>
+              <button class="btn btn-ghost" onClick="{{ runUnload }}">{{ unloadLabel }}</button>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ noBp }}" hint-placeholder-val="{{ false }}">
+          <div style="margin-top:14px; font-size:13px; line-height:1.9; color:color-mix(in srgb, var(--color-text) 55%, transparent);">
+            左边填好故事基础与结构，点「生成蓝图」。蓝图确认之后再逐章展开——先定世界观再写正文，比写完再改便宜得多。
+          </div>
+        </sc-if>
+      </div>
+
+      <!-- 3. 逐章 -->
+      <sc-if value="{{ hasBp }}" hint-placeholder-val="{{ true }}">
+        <div style="border:1px solid var(--color-divider); border-radius:var(--radius-md); padding:16px 18px; background:var(--color-neutral-100);">
+          <div style="display:flex; align-items:center; gap:12px;">
+            <span style="font-family:'Cormorant Garamond',serif; font-size:26px; color:var(--color-accent); line-height:1;">03</span>
+            <h4 style="margin:0; font-size:19px; flex:1;">逐章生成：正文 → 导演分镜</h4>
+            <span style="{{ s2Style }}">{{ s2State }}</span>
+          </div>
+          <div style="font-size:12px; color:color-mix(in srgb, var(--color-text) 55%, transparent); margin-top:6px;">
+            分镜含机位、焦段、光比、轴线、剪辑点，以及每句台词的潜台词与念法（语速/音量/重音/停顿/气口）。
+          </div>
+          <div style="margin-top:14px;">
+            <sc-for list="{{ chapterRows }}" as="r" hint-placeholder-count="6">
+              <div style="border-bottom:1px solid var(--color-divider); padding:7px 0;">
+                <div style="display:grid; grid-template-columns:34px 1fr 104px 104px 62px 62px 62px; gap:9px; align-items:center; font-size:12.5px;">
+                  <span style="font-variant-numeric:tabular-nums; color:var(--color-accent);">{{ r.n }}</span>
+                  <span style="cursor:pointer;" onClick="{{ r.toggle }}">{{ r.title }}</span>
+                  <span style="{{ r.proseStyle }}">{{ r.proseState }}</span>
+                  <span style="{{ r.shotStyle }}">{{ r.shotState }}</span>
+                  <button class="btn btn-ghost" onClick="{{ r.toggle }}">{{ r.toggleLabel }}</button>
+                  <button class="btn btn-secondary" disabled="{{ r.proseDisabled }}" title="{{ r.proseHint }}" style="{{ r.proseBtnStyle }}" onClick="{{ r.writeProse }}">{{ r.proseLabel }}</button>
+                  <button class="btn btn-secondary" disabled="{{ r.shotsDisabled }}" title="{{ r.shotsHint }}" style="{{ r.shotsBtnStyle }}" onClick="{{ r.writeShots }}">{{ r.shotsLabel }}</button>
+                </div>
+                <sc-if value="{{ r.open }}" hint-placeholder-val="{{ false }}">
+                  <div style="margin:10px 0 6px; padding:14px 16px; background:var(--color-bg); border:1px solid var(--color-divider); border-radius:var(--radius-md);">
+                    <div style="font-size:13.5px; line-height:2.05; white-space:pre-wrap; text-indent:2em; max-height:420px; overflow:auto;">{{ r.prose }}</div>
+                    <sc-if value="{{ r.hasSummary }}" hint-placeholder-val="{{ false }}">
+                      <div style="margin-top:12px; padding-top:10px; border-top:1px solid var(--color-divider); font-size:12px; line-height:1.85; color:color-mix(in srgb, var(--color-text) 60%, transparent);">梗概：{{ r.summary }}</div>
+                    </sc-if>
+                    <sc-if value="{{ r.hasShots }}" hint-placeholder-val="{{ false }}">
+                      <div style="font-size:10px; letter-spacing:0.14em; color:var(--color-accent); margin:16px 0 8px;">导演分镜 · {{ r.shotCount }}</div>
+                      <sc-for list="{{ r.shots }}" as="sh" hint-placeholder-count="4">
+                        <div style="border-left:2px solid var(--color-divider); padding:0 0 10px 12px; margin-bottom:10px;">
+                          <div style="font-size:12px;"><span class="tag tag-outline">{{ sh.id }}</span> {{ sh.slug }}</div>
+                          <div style="font-size:11.5px; line-height:1.8; color:color-mix(in srgb, var(--color-text) 70%, transparent); margin-top:3px;">{{ sh.action }}</div>
+                          <div style="font-size:11px; line-height:1.75; color:color-mix(in srgb, var(--color-text) 52%, transparent);">镜头：{{ sh.cam }}</div>
+                          <div style="font-size:11px; line-height:1.75; color:color-mix(in srgb, var(--color-text) 52%, transparent);">灯光：{{ sh.light }}</div>
+                          <sc-for list="{{ sh.dialog }}" as="d" hint-placeholder-count="1">
+                            <div style="font-size:11.5px; line-height:1.8; margin-top:3px;">
+                              <span style="color:var(--color-accent-700);">{{ d.who }}</span>：{{ d.line }}
+                              <span style="color:color-mix(in srgb, var(--color-text) 45%, transparent);">（{{ d.how }}）</span>
+                            </div>
+                          </sc-for>
+                        </div>
+                      </sc-for>
+                    </sc-if>
+                  </div>
+                </sc-if>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </sc-if>
+    </div>
+
+    <!-- 日志 + 服务终端 -->
+    <div style="display:flex; flex-direction:column; gap:16px;">
+      <div style="border:1px solid var(--color-divider); border-radius:var(--radius-md); padding:14px; position:sticky; top:74px; background:var(--color-bg); z-index:5;">
+        <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:10px;">
+          <span style="font-size:10px; letter-spacing:0.14em; color:var(--color-accent);">服务终端 · story_server</span>
+          <span style="{{ termDotStyle }}">{{ termDot }}</span>
+        </div>
+        <div style="background:#14120f; border-radius:6px; padding:10px 11px; max-height:420px; overflow:auto;
+                    font-family:ui-monospace,'Cascadia Mono','SF Mono',Menlo,monospace; font-size:11px; line-height:1.62;">
+          <sc-for list="{{ term }}" as="x" hint-placeholder-count="6">
+            <div style="white-space:pre-wrap; word-break:break-all; {{ x.style }}">{{ x.text }}</div>
+          </sc-for>
+          <sc-if value="{{ termEmpty }}" hint-placeholder-val="{{ false }}">
+            <div style="color:#6b645a;">（等待服务输出…这里是 story_server 进程的真实 stdout/stderr）</div>
+          </sc-if>
+        </div>
+      </div>
+
+      <div style="border:1px solid var(--color-divider); border-radius:var(--radius-md); padding:14px;">
+        <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:10px;">
+          <span style="font-size:10px; letter-spacing:0.14em; color:var(--color-accent);">运行日志</span>
+          <span style="font-size:11px; color:color-mix(in srgb, var(--color-text) 45%, transparent); cursor:pointer;" onClick="{{ clearLogs }}">清空</span>
+        </div>
+        <div style="max-height:260px; overflow-y:auto; display:flex; flex-direction:column; gap:7px;">
+          <sc-for list="{{ logs }}" as="l" hint-placeholder-count="3">
+            <div style="display:grid; grid-template-columns:56px 1fr; gap:8px; font-size:11.5px; line-height:1.65;">
+              <span style="font-variant-numeric:tabular-nums; color:color-mix(in srgb, var(--color-text) 40%, transparent);">{{ l.t }}</span>
+              <span style="{{ l.style }}">{{ l.msg }}</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+  <!-- 底部进度条：长任务期间常驻 -->
+  <sc-if value="{{ showBar }}" hint-placeholder-val="{{ true }}">
+    <div style="position:fixed; left:0; right:0; bottom:0; z-index:50; background:var(--color-bg); border-top:1px solid var(--color-divider); box-shadow:0 -2px 14px rgba(0,0,0,0.06);">
+      <sc-for list="{{ barJobs }}" as="j" hint-placeholder-count="1">
+        <div style="{{ j.rowStyle }}">
+          <div style="height:3px; background:var(--color-neutral-200); position:relative; overflow:hidden;">
+            <div style="{{ j.barStyle }}"></div>
+          </div>
+          <div style="display:flex; align-items:center; gap:14px; padding:9px 26px 10px; font-size:12.5px;">
+            <span class="tag tag-accent">{{ j.op }}</span>
+            <span style="color:color-mix(in srgb, var(--color-text) 72%, transparent);">{{ j.detail }}</span>
+            <span style="{{ j.retryStyle }}">{{ j.retry }}</span>
+            <span style="{{ j.waitStyle }}">{{ j.waitLabel }}</span>
+            <span style="flex:1;"></span>
+            <span style="color:color-mix(in srgb, var(--color-text) 50%, transparent);">{{ j.stage }}</span>
+            <span style="font-variant-numeric:tabular-nums; color:var(--color-accent); min-width:44px; text-align:right; font-weight:600;">{{ j.pct }}</span>
+            <span style="font-variant-numeric:tabular-nums; color:color-mix(in srgb, var(--color-text) 55%, transparent); min-width:52px; text-align:right;">{{ j.elapsed }}</span>
+          </div>
+        </div>
+      </sc-for>
+      <sc-if value="{{ manyJobs }}" hint-placeholder-val="{{ false }}">
+        <div style="padding:0 26px 9px; font-size:11px; line-height:1.7; color:var(--color-accent-900);">{{ jobsNote }}</div>
+      </sc-if>
+    </div>
+  </sc-if>
+
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1440,&quot;height&quot;:980}}">
+// 端点默认跟着页面地址走：远程打开时自动指向主机，而不是打开页面的那台设备。
+const EP_HOST = (function () {
+  const h = (typeof location !== "undefined" && /^https?:$/.test(location.protocol)) ? location.hostname : "";
+  if (!h) return "127.0.0.1";
+  return (h.indexOf(":") >= 0 && h.charAt(0) !== "[") ? "[" + h + "]" : h;
+})();
+
+const DEFAULT_EP = { story: "http://" + EP_HOST + ":8010" };
+
+const REL_LABEL = { kin: "血缘", ally: "盟友", enemy: "敌对",
+                    mentor: "师徒", romance: "情感", duty: "职责" };
+
+const SAMPLE = "晚明江南，一位替人代笔写状纸的落魄书生，卷入一桩漕运贪墨案。他不会武功，唯一的武器是笔和对律法的熟悉。";
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+class Component extends DCLogic {
+  state = {
+    ep: Object.assign({}, DEFAULT_EP),
+    slug: "", premise: SAMPLE, genre: "古装悬疑", language: "zh-CN",
+    chapters: 6, words: 1200, seconds: 10, maxShots: 0,
+    style: "写实电影感，35mm 胶片，暖调，浅景深",
+    bp: null, notes: "", rel: null, assets: null, showPrompts: false,
+    // per chapter: {prose:"", shots:""} progress labels
+    chapterState: {},
+    steps: { bp: "", chapters: "" },
+    projects: [], projectsErr: "",
+    logs: [], busy: "", health: "", healthOk: false,
+    prog: null, batch: null, freed: null,   // batch = {done, total} for 逐章生成
+    term: [], termSeq: 0, termUp: false, gpu: null,
+    open: {}, texts: {}, showRaw: false
+  };
+
+  componentDidMount() {
+    let ep = Object.assign({}, DEFAULT_EP);
+    try {
+      const s = localStorage.getItem("bookreel.story.endpoints");
+      if (s) ep = Object.assign({}, DEFAULT_EP, JSON.parse(s));
+    } catch (e) { /* 首次运行无配置 */ }
+    // Everything this page shows already lives on disk. Reloading the browser
+    // should not throw it away, so the last project is reopened and the list of
+    // the others is offered. setState's callback matters: the fetches below
+    // must see the restored endpoint, not the default one.
+    this.setState({ ep }, () => {
+      this.loadProjects();
+      try {
+        const last = localStorage.getItem("bookreel.story.slug");
+        if (last) this.openProject(last);
+      } catch (e) { /* 无 localStorage 就当没有上次 */ }
+    });
+    // The POST itself reports nothing until it returns, so the bar is driven
+    // by a side channel. 2s is frequent enough to feel alive and far too slow
+    // to matter next to a ten-minute generation.
+    this.poll = setInterval(() => this.tick(), 2000);
+  }
+
+  componentWillUnmount() { if (this.poll) clearInterval(this.poll); }
+
+  async tick() {
+    // VRAM comes from web_server (same origin as this page), not story_server,
+    // so the readout keeps working after step 1 is shut down to free the GPU --
+    // which is exactly when you most want to watch it drain.
+    try {
+      const r = await fetch("/gpu");
+      if (r.ok) this.setState({ gpu: await r.json() });
+    } catch (e) { /* 本地直接开文件时没有 /gpu，安静跳过 */ }
+
+    // The terminal is polled always, not only while busy: seeing the server
+    // idle-but-alive is exactly what answers "is it working?".
+    try {
+      const r = await fetch(this.state.ep.story + "/log?since=" + this.state.termSeq);
+      if (r.ok) {
+        const j = await r.json();
+        if ((j.lines || []).length) {
+          this.setState(s => ({
+            term: s.term.concat(j.lines).slice(-400),
+            termSeq: j.next, termUp: true
+          }));
+        } else {
+          this.setState({ termSeq: j.next, termUp: true });
+        }
+      } else { this.setState({ termUp: false }); }
+    } catch (e) { this.setState({ termUp: false }); }
+
+    // Polled always, not only while this tab is the one running something.
+    // The engine is the authority on whether it is busy: a reloaded page and a
+    // second tab both start with an empty local `busy`, and gating the poll on
+    // it meant they never learned the engine was working and happily offered
+    // buttons that would fire a competing generation.
+    // Failure clears it rather than leaving the last reading behind -- a stale
+    // `active: true` from a server that has since died would disable every
+    // button with no way back.
+    try {
+      const r = await fetch(this.state.ep.story + "/progress");
+      this.setState({ prog: r.ok ? await r.json() : null });
+    } catch (e) { this.setState({ prog: null }); }
+  }
+
+  log(msg, lv) {
+    const t = new Date().toTimeString().slice(0, 8);
+    this.setState(s => ({ logs: s.logs.concat([{ t, msg: String(msg), lv: lv || "info" }]).slice(-300) }));
+  }
+
+  setStep(k, v) { this.setState(s => ({ steps: Object.assign({}, s.steps, { [k]: v }) })); }
+
+  // The story engine's calls are long (a blueprint is 8-15 minutes on a 27B),
+  // so there is no client-side timeout here on purpose -- the browser's own
+  // is the only limit, and a spurious abort would throw away real work.
+  async post(path, body) {
+    const r = await fetch(this.state.ep.story + path, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error((j && j.detail) ? j.detail : ("HTTP " + r.status));
+    return j;
+  }
+
+  guard(name, fn) {
+    return async () => {
+      if (this.state.busy) { this.log("正在跑「" + this.state.busy + "」，等它结束", "warn"); return; }
+      // Local state is empty after a reload and in a second tab, but the engine
+      // is single-threaded in practice -- ask it, not ourselves.
+      const running = this.state.prog;
+      if (running && running.active) {
+        this.log("故事引擎正在跑「" + (running.op || "任务") + "」，等它结束再点", "warn");
+        return;
+      }
+      this.setState({ busy: name });
+      try { await fn(); }
+      catch (e) { this.log("× " + name + " 失败：" + (e.message || e), "error"); }
+      finally { this.setState({ busy: "", prog: null, batch: null }); }
+    };
+  }
+
+  async doBlueprint() {
+    if (!(this.state.premise || "").trim()) throw new Error("故事基础不能为空");
+    this.setStep("bp", "运行中");
+    this.log("生成蓝图中…（27B 上通常 8-15 分钟，别关页面）");
+    const bp = await this.post("/blueprint", {
+      slug: this.state.slug || undefined,
+      premise: this.state.premise,
+      genre: this.state.genre,
+      language: this.state.language,
+      chapters: Number(this.state.chapters) || 6,
+      style: this.state.style
+    });
+    // A new blueprint means new characters; the old graph would point at
+    // ids that may no longer exist.
+    this.setState({ bp, slug: bp.slug, chapterState: {}, rel: null });
+    this.remember(bp.slug);
+    this.loadProjects();
+    this.setStep("bp", "完成 · 第 " + (bp.revision || 1) + " 版");
+    this.syncChapters();
+    this.log("蓝图完成：" + (bp.title || "") + "（" + (bp.characters || []).length + " 人 / " +
+      (bp.locations || []).length + " 景 / " + (bp.chapters || []).length + " 章）");
+  }
+
+  async doRevise() {
+    if (!this.state.bp) throw new Error("先生成蓝图");
+    if (!(this.state.notes || "").trim()) throw new Error("修改意见不能为空");
+    this.setStep("bp", "修改中");
+    this.log("按修改意见重写蓝图…");
+    const bp = await this.post("/blueprint/revise", { slug: this.state.slug, notes: this.state.notes });
+    this.setState({ bp, notes: "" });
+    this.setStep("bp", "完成 · 第 " + (bp.revision || 1) + " 版");
+    this.log("蓝图已更新到第 " + (bp.revision || 1) + " 版（旧版留在 revisions/）");
+  }
+
+  // Read back what was generated. Served by web_server from disk, so it works
+  // even after the LLM has been kicked out of VRAM.
+  async loadChapter(n) {
+    if (this.state.texts[n]) return;
+    try {
+      const r = await fetch("/api/chapter?slug=" + encodeURIComponent(this.state.slug) + "&n=" + n);
+      if (!r.ok) return;
+      const j = await r.json();
+      this.setState(s => ({ texts: Object.assign({}, s.texts, { [n]: j }) }));
+    } catch (e) { this.log("读取第 " + n + " 章失败：" + e.message, "warn"); }
+  }
+
+  // The row badges have to reflect what is on disk, not only what this session
+  // produced. /project/<slug> already reports words per chapter and shots per
+  // script, so one call settles which chapters would be overwritten.
+  async syncChapters() {
+    if (!this.state.slug) return;
+    try {
+      const r = await fetch(this.state.ep.story + "/project/" +
+                            encodeURIComponent(this.state.slug));
+      if (!r.ok) return;
+      const j = await r.json();
+      const cs = {};
+      for (const c of (j.chapters || []))
+        cs[c.n] = Object.assign({}, cs[c.n], { prose: "完成 " + c.words + " 字" });
+      for (const s of (j.scripts || []))
+        cs[s.n] = Object.assign({}, cs[s.n], { shots: "完成 " + s.shots + " 镜" });
+      this.setState({ chapterState: cs });
+    } catch (e) { /* 服务没起时安静跳过，不打扰 */ }
+  }
+
+  // Regenerating overwrites the file on disk and costs minutes of GPU, so ask
+  // -- but only when there is something to lose. Asking before the first run
+  // would just be a click to dismiss, and people stop reading those.
+  confirmOverwrite(exists, what) {
+    if (!exists) return true;
+    const ok = window.confirm(
+      what + "已经生成过。\n\n重新生成会覆盖磁盘上的旧内容，无法撤销，" +
+      "并且要重新占用 GPU 数分钟。\n\n确定重新生成吗？");
+    if (!ok) this.log("已取消：" + what + "，磁盘内容保持不变");
+    return ok;
+  }
+
+  async loadProjects() {
+    try {
+      const r = await fetch(this.state.ep.story + "/projects");
+      if (!r.ok) {
+        this.setState({ projectsErr: "故事引擎返回 HTTP " + r.status });
+        return;
+      }
+      const j = await r.json();
+      this.setState({ projects: j.projects || [], projectsErr: "" });
+    } catch (e) {
+      // Swallowing this is what made the empty row impossible to explain.
+      this.setState({ projectsErr: "读取项目列表失败：" + (e.message || e) });
+    }
+  }
+
+  // /project/<slug> hands back the blueprint plus what has actually been
+  // written -- exactly the state this page keeps in memory.
+  async openProject(slug) {
+    if (!slug) return;
+    try {
+      const r = await fetch(this.state.ep.story + "/project/" + encodeURIComponent(slug));
+      if (!r.ok) {
+        this.log("打开项目「" + slug + "」失败：HTTP " + r.status, "warn");
+        return;
+      }
+      const j = await r.json();
+      const bp = j.blueprint;
+      if (!bp) { this.log("项目「" + slug + "」没有蓝图", "warn"); return; }
+      const cs = {};
+      for (const c of (j.chapters || []))
+        cs[c.n] = Object.assign({}, cs[c.n], { prose: "完成 " + c.words + " 字" });
+      for (const s of (j.scripts || []))
+        cs[s.n] = Object.assign({}, cs[s.n], { shots: "完成 " + s.shots + " 镜" });
+      const nProse = (j.chapters || []).length, nShots = (j.scripts || []).length;
+      this.setState({
+        bp, slug, chapterState: cs, texts: {}, open: {}, rel: null,
+        assets: j.assets || null,
+        premise: bp.premise || this.state.premise,
+        genre: bp.genre || this.state.genre,
+        language: bp.language || this.state.language,
+        chapters: (bp.chapters || []).length || this.state.chapters
+      });
+      this.setStep("bp", "完成 · 第 " + (bp.revision || 1) + " 版");
+      this.setStep("chapters", nProse
+        ? ("正文 " + nProse + " 章 · 分镜 " + nShots + " 章") : "");
+      this.remember(slug);
+      this.log("已打开「" + (bp.title || slug) + "」：正文 " + nProse + " 章，分镜 " +
+        nShots + " 章。逐章内容点「查看」按需读取。");
+      this.loadRelations(slug);
+    } catch (e) {
+      this.log("打开项目失败：" + (e.message || e), "warn");
+    }
+  }
+
+  async loadRelations(slug) {
+    try {
+      const r = await fetch(this.state.ep.story + "/relations/" + encodeURIComponent(slug));
+      if (r.ok) this.setState({ rel: await r.json() });
+    } catch (e) { /* 没生成过关系图是正常状态，不报错 */ }
+  }
+
+  remember(slug) {
+    try { localStorage.setItem("bookreel.story.slug", slug); } catch (e) { /* 忽略 */ }
+  }
+
+  toggleChapter(n) {
+    return () => {
+      const open = Object.assign({}, this.state.open);
+      open[n] = !open[n];
+      this.setState({ open });
+      if (open[n]) this.loadChapter(n);
+    };
+  }
+
+  markChapter(n, key, val) {
+    this.setState(s => {
+      const cs = Object.assign({}, s.chapterState);
+      cs[n] = Object.assign({}, cs[n] || {}, { [key]: val });
+      return { chapterState: cs };
+    });
+  }
+
+  async chapterProse(n) {
+    this.markChapter(n, "prose", "写作中");
+    this.log("第 " + n + " 章 · 正文…");
+    const ch = await this.post("/chapter", {
+      slug: this.state.slug, n, words: Number(this.state.words) || 1200
+    });
+    this.setState(s => { const t = Object.assign({}, s.texts); delete t[n]; return { texts: t }; });
+    this.markChapter(n, "prose", "完成 " + (ch.prose || "").length + " 字");
+    this.log("第 " + n + " 章正文完成（" + (ch.prose || "").length + " 字）");
+  }
+
+  async chapterShots(n) {
+    this.markChapter(n, "shots", "分镜中");
+    this.log("第 " + n + " 章 · 导演分镜…");
+    const sc = await this.post("/script", {
+      slug: this.state.slug, n,
+      seconds: Number(this.state.seconds) || 10,
+      max_shots: Number(this.state.maxShots) || 0
+    });
+    const shots = (sc.shots || []).length;
+    this.setState(s => { const t = Object.assign({}, s.texts); delete t[n]; return { texts: t }; });
+    this.markChapter(n, "shots", "完成 " + shots + " 镜");
+    this.log("第 " + n + " 章分镜完成：" + shots + " 镜");
+  }
+
+  async doAll() {
+    if (!this.state.bp) throw new Error("先生成蓝图");
+    const list = this.state.bp.chapters || [];
+    const total = list.length * 2;            // 每章两步：正文 + 分镜
+    let done = 0;
+    this.setState({ batch: { done, total } });
+    for (const c of list) {
+      const n = c.n;
+      this.setStep("chapters", "第 " + n + " / " + list.length + " 章");
+      await this.chapterProse(n);
+      this.setState({ batch: { done: ++done, total } });
+      await this.chapterShots(n);
+      this.setState({ batch: { done: ++done, total } });
+    }
+    this.setState({ batch: null });
+    this.setStep("chapters", "完成 · " + list.length + " 章");
+    this.log("全部章节与分镜完成。");
+    // The whole point of step 1 owning the GPU alone is that it hands it back.
+    // Doing this automatically at the end of the batch means the user never has
+    // to remember, and step 2 finds the card empty.
+    try { await this.doUnload(); } catch (e) { this.log("自动卸载失败：" + e.message, "warn"); }
+    this.log("接下来生成资产提示词，然后起 ComfyUI 做第二步。");
+  }
+
+  // 第一步跑完就把大模型踢出显存，第二步的 ComfyUI 才有地方放。
+  async doUnload() {
+    const j = await this.post("/unload", {});
+    if (j.freed_gb) {
+      this.log("已释放显存 " + j.freed_gb + " GB（" + j.vram_before_gb + " → " + j.vram_after_gb + " GB）");
+    } else if (j.ok) {
+      this.log("大模型已卸载（显存读数不可用）");
+    } else {
+      this.log("卸载失败：" + (j.detail || "未知"), "warn");
+    }
+    this.setState({ freed: j });
+  }
+
+  async doRelations() {
+    if (!this.state.bp) throw new Error("先生成蓝图");
+    this.log("生成人物关系图（派系 / 血缘 / 敌友）…");
+    const rel = await this.post("/relations", { slug: this.state.slug });
+    this.setState({ rel });
+    this.log("关系图完成：" + (rel.factions || []).length + " 个派系 / " +
+      (rel.edges || []).length + " 条关系。参考图会据此对齐家族相貌与派系服饰。");
+  }
+
+  async doAssets() {
+    if (!this.state.bp) throw new Error("先生成蓝图");
+    this.log("生成资产提示词（人物 / 场景 / 道具）…");
+    const lib = await this.post("/assets", { slug: this.state.slug });
+    this.setState({ assets: lib });
+    const n = (lib.items || []).length;
+    this.log("资产提示词完成：" + n + " 条，已写入 projects/" + this.state.slug + "/assets/prompts.json");
+  }
+
+  async doHealth() {
+    try {
+      const r = await fetch(this.state.ep.story + "/health");
+      const j = await r.json();
+      const ok = j.status === "ok";
+      this.setState({ health: ok ? "故事引擎在线" : "故事引擎异常", healthOk: ok });
+      this.log((ok ? "✓ " : "! ") + (j.detail || j.status) + " · " + (j.model || ""), ok ? "info" : "warn");
+    } catch (e) {
+      this.setState({ health: "未连接", healthOk: false });
+      this.log("× 故事引擎未连接：" + this.state.ep.story, "error");
+    }
+  }
+
+  renderVals() {
+    const st = this.state, bp = st.bp;
+    const badge = v => "font-size:10.5px; padding:2px 8px; border-radius:3px; white-space:nowrap; display:inline-block; background:" +
+      (String(v).indexOf("完成") === 0 ? "var(--color-accent-100)" : v === "失败" ? "var(--color-accent-200)" : "var(--color-neutral-100)") +
+      "; color:" + (String(v).indexOf("完成") === 0 ? "var(--color-accent-800)" : v === "失败" ? "var(--color-accent-900)" : "var(--color-neutral-700)") + ";";
+    const logStyle = lv => "line-height:1.65; color:" + (lv === "error" ? "var(--color-accent-900)" : lv === "warn" ? "var(--color-accent-700)" : "color-mix(in srgb, var(--color-text) 75%, transparent)") + ";";
+    const set = k => e => { const v = e.target.value; this.setState({ [k]: v }); };
+    const g = (st.gpu && (st.gpu.gpus || [])[0]) || null;
+    const vramPct = (g && g.mem_total_gb && g.mem_used_gb != null)
+      ? Math.round(g.mem_used_gb / g.mem_total_gb * 100) : null;
+    const p = st.prog && st.prog.active ? st.prog : null;
+    const retry = !!(p && p.attempt > 1);
+    // Real progress now: the server streams the model and reports tokens
+    // received against a self-calibrating expectation. During a batch run the
+    // current call's fraction is folded into the overall step count, so the bar
+    // moves smoothly instead of jumping once per chapter.
+    const callPct = (p && typeof p.pct === "number") ? p.pct : null;
+    let pct = null;
+    if (st.batch && st.batch.total) {
+      const frac = callPct === null ? 0 : callPct / 100;
+      pct = Math.min(99, Math.round((st.batch.done + frac) / st.batch.total * 100));
+    } else if (callPct !== null) {
+      pct = callPct;
+    }
+    const mmss = sec => {
+      const s2 = Math.max(0, Math.floor(sec || 0));
+      return Math.floor(s2 / 60) + ":" + String(s2 % 60).padStart(2, "0");
+    };
+
+    const w = (bp && bp.world) || {}, vs = (bp && bp.visual_style) || {};
+    // Edges carry ids; a reader wants names.
+    const nameOf = id => {
+      const c = ((bp && bp.characters) || []).find(x => x.id === id);
+      return c ? (c.name || id) : id;
+    };
+    const anyChapterDone = Object.keys(st.chapterState || {}).some(k => {
+      const v = st.chapterState[k] || {};
+      return String(v.prose || "").indexOf("完成") === 0 ||
+             String(v.shots || "").indexOf("完成") === 0;
+    });
+    const OFF = "opacity:.42; cursor:not-allowed;";
+    // Grey out on the engine's state too, so a reloaded page does not offer
+    // buttons that will only be refused.
+    const busyNow = !!st.busy || !!p;
+
+    // Oldest first, so a bar does not jump position when another job starts.
+    const rawJobs = (st.prog && st.prog.jobs) || (p ? [p] : []);
+    const barJobs = rawJobs.map((j, i) => {
+      const jp = (j.tokens && j.expect)
+        ? Math.min(99, Math.round(j.tokens * 100 / j.expect)) : null;
+      const jretry = j.attempt > 1;
+      return {
+        op: j.op || "",
+        detail: j.detail || "正在等待模型…",
+        retry: jretry ? ("JSON 重试 " + j.attempt + "/" + j.tries) : "",
+        retryStyle: "font-size:11px; padding:1px 7px; border-radius:3px; white-space:nowrap;"
+          + (jretry ? "background:var(--color-accent-200); color:var(--color-accent-900);"
+                    : "display:none;"),
+        waitLabel: j.waiting ? "排队中" : "",
+        waitStyle: "font-size:11px; padding:1px 7px; border-radius:3px; white-space:nowrap;"
+          + (j.waiting ? "background:var(--color-neutral-200); color:var(--color-neutral-700);"
+                       : "display:none;"),
+        stage: [
+          j.steps ? ("第 " + j.step + " / " + j.steps + " 章") : "",
+          j.tokens ? (j.tokens + " / ~" + j.expect + " tok") : "",
+          j.tps ? (j.tps + " tok/s") : ""
+        ].filter(Boolean).join("  ·  "),
+        pct: jp === null ? "" : (jp + "%"),
+        elapsed: mmss(j.elapsed),
+        rowStyle: i > 0 ? "border-top:1px solid var(--color-divider);" : "",
+        barStyle: jp === null
+          ? ("position:absolute; top:0; height:100%; width:38%; background:var(--color-accent);"
+             + " animation:bookreel-slide 1.5s linear infinite;"
+             + (j.waiting ? " opacity:.4;" : ""))
+          : ("position:absolute; top:0; left:0; height:100%; background:var(--color-accent);"
+             + " width:" + jp + "%; transition:width .5s ease-out;")
+      };
+    });
+
+    const chapterRows = ((bp && bp.chapters) || []).map(c => {
+      const cs = st.chapterState[c.n] || {};
+      const t = st.texts[c.n] || null;
+      const chap = (t && t.chapter) || {};
+      const shots = ((t && t.script && t.script.shots) || []).map(sh => {
+        const cam = sh.camera || {};
+        return {
+          id: sh.id || "", slug: sh.slug_line || "",
+          action: sh.action || "",
+          cam: [cam.shot_size, cam.angle, cam.lens_mm ? cam.lens_mm + "mm" : null,
+                cam.aperture, cam.movement, cam.movement_speed,
+                cam.focus, cam.screen_direction].filter(Boolean).join(" · "),
+          light: typeof sh.lighting === "object" && sh.lighting
+            ? [sh.lighting.key, sh.lighting.fill, sh.lighting.back,
+               sh.lighting.practical, sh.lighting.ratio, sh.lighting.color_temp,
+               sh.lighting.motivation].filter(Boolean).join(" · ")
+            : (sh.lighting || ""),
+          dialog: (sh.dialog || []).map(d => {
+            const dl = d.delivery || {};
+            return {
+              who: d.who || "",
+              line: d.line || "",
+              how: [d.subtext ? "潜台词：" + d.subtext : null, dl.emotion, dl.pace,
+                    dl.volume, dl.pitch, dl.timbre,
+                    dl.emphasis ? "重音「" + dl.emphasis + "」" : null,
+                    dl.pause ? "停顿：" + dl.pause : null, dl.breath]
+                .filter(Boolean).join("，")
+            };
+          })
+        };
+      });
+      // "完成" is what markChapter and syncChapters both write on success;
+      // anything else ("写作中", "未写") means there is nothing to overwrite.
+      const doneProse = String(cs.prose || "").indexOf("完成") === 0;
+      const doneShots = String(cs.shots || "").indexOf("完成") === 0;
+      const busy = busyNow;
+      // 分镜 has a hard dependency: /script 404s without the prose on disk.
+      const shotsBlocked = busy || !doneProse;
+      const offStyle = "opacity:.42; cursor:not-allowed;";
+
+      return {
+        n: c.n, title: c.title || "",
+        proseState: cs.prose || "未写", proseStyle: badge(cs.prose || "未写"),
+        proseDisabled: busy,
+        shotsDisabled: shotsBlocked,
+        proseLabel: doneProse ? "重写正文" : "正文",
+        shotsLabel: doneShots ? "重拆分镜" : "分镜",
+        proseBtnStyle: busy ? offStyle : "",
+        shotsBtnStyle: shotsBlocked ? offStyle : "",
+        proseHint: busy ? ("正在跑「" + (st.busy || (p && p.op) || "任务") + "」，等它结束")
+          : (doneProse ? "已有正文，点击会覆盖重写" : "生成这一章正文"),
+        shotsHint: busy ? ("正在跑「" + (st.busy || (p && p.op) || "任务") + "」，等它结束")
+          : (!doneProse ? "需要先生成这一章正文，分镜是照着正文拆的"
+             : (doneShots ? "已有分镜，点击会覆盖重拆" : "把这一章拆成镜头表")),
+        shotState: cs.shots || "未拆", shotStyle: badge(cs.shots || "未拆"),
+        open: !!st.open[c.n],
+        toggle: this.toggleChapter(c.n),
+        toggleLabel: st.open[c.n] ? "收起" : "查看",
+        prose: chap.prose || (t ? "（这一章还没有正文）" : "读取中…"),
+        summary: chap.summary || "", hasSummary: !!chap.summary,
+        shots, hasShots: shots.length > 0, shotCount: shots.length + " 镜",
+        writeProse: this.guard("第" + c.n + "章正文", async () => {
+          if (!this.confirmOverwrite(doneProse, "第 " + c.n + " 章正文")) return;
+          await this.chapterProse(c.n);
+        }),
+        writeShots: this.guard("第" + c.n + "章分镜", async () => {
+          if (!doneProse) { this.log("第 " + c.n + " 章还没有正文，分镜要照着正文拆", "warn"); return; }
+          if (!this.confirmOverwrite(doneShots, "第 " + c.n + " 章分镜")) return;
+          await this.chapterShots(c.n);
+        })
+      };
+    });
+
+    return {
+      slug: st.slug, premise: st.premise, genre: st.genre, language: st.language,
+      chapters: st.chapters, words: st.words, seconds: st.seconds, maxShots: st.maxShots,
+      style: st.style, notes: st.notes,
+      setSlug: set("slug"), setPremise: set("premise"), setGenre: set("genre"),
+      setLanguage: set("language"), setChapters: set("chapters"), setWords: set("words"),
+      setSeconds: set("seconds"), setMaxShots: set("maxShots"), setStyle: set("style"),
+      setNotes: set("notes"),
+
+      epStory: st.ep.story,
+      setEpStory: e => { const v = e.target.value; this.setState(s => ({ ep: Object.assign({}, s.ep, { story: v }) })); },
+      saveEndpoints: () => { localStorage.setItem("bookreel.story.endpoints", JSON.stringify(st.ep)); this.log("端点已保存"); },
+
+      hasBp: !!bp, noBp: !bp,
+      bpTitle: bp ? (bp.title || "") : "",
+      bpLogline: bp ? (bp.logline || "") : "",
+      bpRevision: bp ? (bp.revision || 1) : 1,
+      bpWorld: bp ? [w.era, w.place, w.culture, w.tone].filter(Boolean).join(" · ") : "",
+      bpStyle: bp ? [vs.palette, vs.film_stock, vs.lens, vs.aspect].filter(Boolean).join("｜") : "",
+      bpChars: ((bp && bp.characters) || []).map(c => ({
+        id: c.id, name: c.name,
+        line: [c.role, c.appearance, c.costume].filter(Boolean).join("｜")
+      })),
+      bpLocs: ((bp && bp.locations) || []).map(l => ({
+        id: l.id, name: l.name,
+        line: [l.interior_exterior, l.description].filter(Boolean).join("｜")
+      })),
+      bpChapters: ((bp && bp.chapters) || []).map(c => ({ n: c.n, title: c.title || "", summary: c.summary || "" })),
+      showRaw: st.showRaw,
+      rawLabel: st.showRaw ? "收起完整蓝图" : "查看完整蓝图",
+      rawJson: bp ? JSON.stringify(bp, null, 2) : "",
+      toggleRaw: () => this.setState({ showRaw: !st.showRaw }),
+      chapterRows,
+
+      projectsNote: (st.projects || []).length ? ""
+        : (st.projectsErr || "（没读到项目，故事引擎可能没起）"),
+      projectRows: (st.projects || []).map(pj => {
+        const cur = pj.slug === st.slug;
+        return {
+          label: (pj.title || pj.slug) + "（" + pj.chapters_written + "/" +
+                 pj.chapters_planned + "）",
+          hint: pj.slug + "：计划 " + pj.chapters_planned + " 章，已写 " +
+                pj.chapters_written + " 章，第 " + pj.revision + " 版" +
+                (cur ? "（当前打开）" : "，点击打开"),
+          style: "font-size:11.5px; padding:2px 9px;" +
+                 (cur ? " color:var(--color-accent); border-color:var(--color-accent);" : "") +
+                 (busyNow ? " opacity:.42; cursor:not-allowed;" : ""),
+          open: () => { if (!busyNow) this.openProject(pj.slug); }
+        };
+      }),
+
+      // 这两样都容易忘了跑，跑完又离开页面就看不见了，所以在按钮旁边写清楚。
+      relBadge: st.rel
+        ? ("已生成 · " + ((st.rel.edges || []).length) + " 条关系 / " +
+           ((st.rel.factions || []).length) + " 派系")
+        : "未生成",
+      relBadgeStyle: badge(st.rel ? "完成" : "未运行"),
+      assetBadge: (st.assets && (st.assets.items || []).length)
+        ? ("已生成 · " + st.assets.items.length + " 条提示词")
+        : "未生成",
+      assetBadgeStyle: badge((st.assets && (st.assets.items || []).length) ? "完成" : "未运行"),
+      hasAssets: !!(st.assets && (st.assets.items || []).length),
+      showPrompts: st.showPrompts,
+      promptsLabel: st.showPrompts ? "收起提示词" : "查看提示词",
+      togglePrompts: () => this.setState({ showPrompts: !st.showPrompts }),
+      promptRows: ((st.assets && st.assets.items) || []).map(it => ({
+        key: it.key,
+        kind: ({ character: "人物", location: "场景", prop: "道具" })[it.kind] || it.kind,
+        label: (it.label || it.id) + (it.time_of_day ? ("· " + it.time_of_day) : ""),
+        prompt: it.prompt || "",
+        file: it.file || ""
+      })),
+
+      hasRel: !!st.rel,
+      relFactions: ((st.rel && st.rel.factions) || []).map(f => ({
+        name: f.name || "", stance: f.stance || "—",
+        line: [f.palette, f.insignia,
+               (f.members || []).map(nameOf).join("、")].filter(Boolean).join("　·　")
+      })),
+      relEdges: ((st.rel && st.rel.edges) || []).map(e => ({
+        kind: REL_LABEL[e.type] || e.type || "关系",
+        pair: nameOf(e.from) + " — " + nameOf(e.to),
+        line: [e.subtype, e.label,
+               e.shared_features ? ("共有特征：" + e.shared_features) : "",
+               (e.turns || []).map(t => "第" + t.chapter + "章转为" +
+                 (REL_LABEL[t.becomes] || t.becomes)).join("；")
+              ].filter(Boolean).join("　·　")
+      })),
+
+      bpBtnLabel: st.busy === "蓝图" ? "生成中…" : (bp ? "重新生成蓝图" : "生成蓝图"),
+      runAllLabel: st.busy ? ("运行中 · " + st.busy) : "确认蓝图，逐章生成正文与分镜",
+      runBlueprint: this.guard("蓝图", async () => {
+        if (!this.confirmOverwrite(!!bp, "制作圣经（蓝图）")) return;
+        await this.doBlueprint();
+      }),
+      runRevise: this.guard("修改蓝图", () => this.doRevise()),
+      runAll: this.guard("逐章生成", async () => {
+        if (!this.confirmOverwrite(anyChapterDone, "已有章节的正文/分镜")) return;
+        await this.doAll();
+      }),
+      // Every one of these overwrites something on disk and costs GPU minutes,
+      // so they share one rule: dead while anything runs, and a confirmation
+      // before they destroy work that already exists.
+      anyBusy: busyNow,
+      bpBtnStyle: "margin-top:14px;" + (busyNow ? OFF : ""),
+      offStyle: busyNow ? OFF : "",
+      runRelations: this.guard("关系图", async () => {
+        if (!this.confirmOverwrite(!!st.rel, "人物关系图")) return;
+        await this.doRelations();
+      }),
+      relBtnLabel: st.busy === "关系图" ? "生成中…"
+        : (st.rel ? "重新生成关系图" : "生成关系图"),
+      runAssets: this.guard("资产提示词", () => this.doAssets()),
+      runUnload: this.guard("释放显存", () => this.doUnload()),
+      unloadLabel: st.freed && st.freed.freed_gb
+        ? ("已释放 " + st.freed.freed_gb + " GB") : "释放显存（踢掉大模型）",
+      checkHealth: this.guard("体检", () => this.doHealth()),
+
+      s1State: st.steps.bp || "未运行", s1Style: badge(st.steps.bp || "未运行"),
+      s2State: st.steps.chapters || "未运行", s2Style: badge(st.steps.chapters || "未运行"),
+      healthLabel: st.health || "状态未知", healthStyle: badge(st.healthOk ? "完成" : "未运行"),
+
+      // --- 显存读数（右上角）---
+      // 没有读数时显示"未知"，不编造数字。
+      vramName: g ? (g.name || "").replace(/\s*\(.*\)$/, "") : "",
+      vramText: vramPct === null ? "未知" : (g.mem_used_gb + " / " + g.mem_total_gb + " GB"),
+      vramTextStyle: vramPct !== null && vramPct >= 85
+        ? "color:var(--color-accent-900);" : "color:inherit;",
+      vramBarStyle: "height:100%; transition:width .4s; width:" + (vramPct || 0) + "%;" +
+        "background:" + (vramPct === null ? "var(--color-neutral-300)"
+          : vramPct >= 85 ? "var(--color-accent-900)"
+          : vramPct >= 70 ? "var(--color-accent-700)" : "var(--color-accent)") + ";",
+
+      // --- 底部进度条 ---
+      // 两种模式：逐章生成时步数已知，用确定进度；单次大模型调用无从预测，
+      // 用不确定条纹 + 已用时长。宁可诚实地不知道，也不要画一条假的百分比。
+      // One bar per live job. The engine reports every one of them; drawing
+      // only the newest is how a second generation ran for eleven minutes
+      // without appearing anywhere.
+      showBar: barJobs.length > 0,
+      barJobs,
+      manyJobs: barJobs.length > 1,
+      jobsNote: barJobs.length > 1
+        ? (barJobs.length + " 个任务在抢同一块 GPU，它们会互相拖慢——"
+           + "排队中的那个要等前面的跑完才会开始出 token")
+        : "",
+      barOp: (p && p.op) || st.busy || "",
+      barDetail: (p && p.detail) || "正在等待模型…",
+      barRetry: retry ? ("JSON 重试 " + p.attempt + "/" + p.tries) : "",
+      retryStyle: "font-size:11px; padding:1px 7px; border-radius:3px; white-space:nowrap;" +
+        (retry ? "background:var(--color-accent-200); color:var(--color-accent-900);" : "display:none;"),
+      barStage: [
+        st.batch ? (st.batch.done + " / " + st.batch.total + " 步")
+                 : (p && p.steps ? ("第 " + p.step + " / " + p.steps + " 章") : ""),
+        (p && p.tokens) ? (p.tokens + " / ~" + p.expect + " tok") : "",
+        (p && p.tps) ? (p.tps + " tok/s") : ""
+      ].filter(Boolean).join("  ·  "),
+      barPct: pct === null ? "" : (pct + "%"),
+      barElapsed: mmss(p && p.elapsed),
+      // Only falls back to the stripe before the first token arrives -- after
+      // that there is a real number and we show it.
+      barStyle: pct === null
+        ? ("position:absolute; top:0; height:100%; width:38%; background:var(--color-accent);" +
+           " animation:bookreel-slide 1.5s linear infinite;")
+        : ("position:absolute; top:0; left:0; height:100%; background:var(--color-accent);" +
+           " width:" + pct + "%; transition:width .5s ease-out;"),
+
+      // 服务终端：原样显示 story_server 的 stdout/stderr
+      term: st.term.map(x => ({
+        text: x.t + "  " + x.text,
+        style: "color:" + (x.kind === "err" || /(^|\s)(x|!)\s|Traceback|Error/.test(x.text)
+          ? "#e0a3a3" : (x.text.indexOf("[story]") >= 0 ? "#cbbf9f" : "#8f887d")) + ";"
+      })),
+      termEmpty: st.term.length === 0,
+      termDot: st.termUp ? "在线" : "未连接",
+      termDotStyle: "font-size:10.5px; padding:1px 7px; border-radius:3px;" +
+        (st.termUp ? "background:var(--color-accent-100); color:var(--color-accent-800);"
+                   : "background:var(--color-neutral-200); color:var(--color-neutral-700);"),
+
+      logs: st.logs.slice().reverse().map(l => ({ t: l.t, msg: l.msg, style: logStyle(l.lv) })),
+      clearLogs: () => this.setState({ logs: [] })
+    };
+  }
+}
+</script>
+</body>
+</html>

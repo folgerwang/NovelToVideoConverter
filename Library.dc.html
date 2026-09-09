@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/classical-d362d489-8175-478e-8156-5e2f8f43f744/styles.css">
+<script src="_ds/classical-d362d489-8175-478e-8156-5e2f8f43f744/_ds_bundle.js"></script>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@300;400;500;600&display=swap">
+<style>
+  body { margin:0; font-family:"Lora","Noto Serif SC",serif; }
+  h1,h2,h3,h4 { font-family:"Cormorant Garamond","Noto Serif SC",serif; }
+  a { color: var(--color-accent); text-decoration:none; }
+  .btn, .tag { white-space:nowrap; flex:none; }
+  ::-webkit-scrollbar { width:10px; height:10px; }
+  ::-webkit-scrollbar-thumb { background: var(--color-neutral-300); border-radius:6px; }
+</style>
+</helmet>
+
+<div style="min-height:100vh; min-width:1100px; background:var(--color-bg); color:var(--color-text); font-family:'Lora','Noto Serif SC',serif; font-size:14px;">
+
+  <header style="display:flex; align-items:center; gap:16px; padding:16px 26px; border-bottom:1px solid var(--color-divider);">
+    <a href="/" style="font-family:'Cormorant Garamond',serif; font-size:24px; color:var(--color-accent);">书影 Bookreel</a>
+    <h3 style="margin:0; font-size:17px;">素材库</h3>
+    <span class="tag tag-outline">{{ projTitle }}</span>
+    <span style="flex:1;"></span>
+    <sc-for list="{{ projTabs }}" as="p" hint-placeholder-count="2">
+      <button class="btn btn-secondary" onClick="{{ p.pick }}">{{ p.label }}</button>
+    </sc-for>
+    <button class="btn btn-secondary" onClick="{{ reload }}">刷新</button>
+  </header>
+
+  <div style="padding:20px 26px 50px;">
+
+    <sc-if value="{{ empty }}" hint-placeholder-val="{{ false }}">
+      <div style="font-size:13.5px; line-height:1.9; color:color-mix(in srgb, var(--color-text) 55%, transparent); padding:30px 0;">
+        {{ emptyMsg }}
+      </div>
+    </sc-if>
+
+    <!-- 人物关系：第一步的产物，出图时靠它对齐家族相貌与派系服饰 -->
+    <sc-if value="{{ hasRel }}" hint-placeholder-val="{{ true }}">
+      <div style="margin-bottom:26px;">
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
+          <span style="font-size:10px; letter-spacing:0.14em; color:var(--color-accent);">人物关系</span>
+          <span style="font-size:11.5px; color:color-mix(in srgb, var(--color-text) 50%, transparent);">{{ relTally }}</span>
+          <div style="flex:1; height:1px; background:var(--color-divider);"></div>
+          <button class="btn btn-secondary" onClick="{{ toggleGraph }}">{{ graphLabel }}</button>
+        </div>
+
+        <sc-if value="{{ graphOpen }}" hint-placeholder-val="{{ true }}">
+          <div style="border:1px solid var(--color-divider); border-radius:var(--radius-md); background:var(--color-neutral-100); padding:10px 12px 12px; margin-bottom:16px;">
+            <div style="display:flex; gap:14px; align-items:center; flex-wrap:wrap; font-size:11px; color:color-mix(in srgb, var(--color-text) 55%, transparent); margin-bottom:4px;">
+              <sc-for list="{{ legend }}" as="lg" hint-placeholder-count="6">
+                <span><span style="{{ lg.style }}"></span>{{ lg.name }}</span>
+              </sc-for>
+              <span style="flex:1;"></span>
+              <span>{{ selHint }}</span>
+            </div>
+            <svg viewBox="{{ gBox }}" style="width:100%; height:auto; display:block;">
+              <sc-for list="{{ gEdges }}" as="e" hint-placeholder-count="6">
+                <path d="{{ e.d }}" stroke="{{ e.color }}" stroke-width="{{ e.w }}" stroke-opacity="{{ e.op }}" fill="none" stroke-linecap="round"></path>
+              </sc-for>
+              <sc-for list="{{ gNodes }}" as="n" hint-placeholder-count="5">
+                <g opacity="{{ n.op }}" style="cursor:pointer;" onClick="{{ n.pick }}">
+                  <circle cx="{{ n.cx }}" cy="{{ n.cy }}" r="{{ n.r }}" fill="{{ n.fill }}" stroke="{{ n.stroke }}" stroke-width="3"></circle>
+                  <text x="{{ n.cx }}" y="{{ n.ty }}" text-anchor="middle" style="{{ n.textStyle }}">{{ n.name }}</text>
+                </g>
+              </sc-for>
+            </svg>
+            <sc-if value="{{ hasSel }}" hint-placeholder-val="{{ false }}">
+              <div style="border-top:1px solid var(--color-divider); margin-top:8px; padding-top:10px;">
+                <div style="font-size:13px; margin-bottom:6px;">{{ selName }}</div>
+                <sc-for list="{{ selEdges }}" as="se" hint-placeholder-count="3">
+                  <div style="display:grid; grid-template-columns:150px 1fr; gap:10px; font-size:12px; line-height:1.75; margin-bottom:5px;">
+                    <span><span class="tag tag-outline">{{ se.kind }}</span> {{ se.pair }}</span>
+                    <span style="color:color-mix(in srgb, var(--color-text) 70%, transparent);">{{ se.line }}</span>
+                  </div>
+                </sc-for>
+              </div>
+            </sc-if>
+          </div>
+        </sc-if>
+        <sc-for list="{{ factions }}" as="f" hint-placeholder-count="2">
+          <div style="display:grid; grid-template-columns:150px 1fr; gap:10px; font-size:12.5px; line-height:1.8; margin-bottom:7px;">
+            <span><span class="tag tag-outline">{{ f.stance }}</span> {{ f.name }}</span>
+            <span style="color:color-mix(in srgb, var(--color-text) 70%, transparent);">{{ f.line }}</span>
+          </div>
+        </sc-for>
+        <sc-for list="{{ edges }}" as="e" hint-placeholder-count="5">
+          <div style="display:grid; grid-template-columns:150px 1fr; gap:10px; font-size:12.5px; line-height:1.8; margin-bottom:7px;">
+            <span><span class="tag tag-outline">{{ e.kind }}</span> {{ e.pair }}</span>
+            <span style="color:color-mix(in srgb, var(--color-text) 70%, transparent);">{{ e.line }}</span>
+          </div>
+        </sc-for>
+      </div>
+    </sc-if>
+
+    <!-- 参考图：按 人物 / 场景 / 道具 分组 -->
+    <sc-for list="{{ groups }}" as="g" hint-placeholder-count="3">
+      <div style="margin-bottom:26px;">
+        <div style="display:flex; align-items:baseline; gap:10px; margin-bottom:12px;">
+          <span style="font-size:10px; letter-spacing:0.14em; color:var(--color-accent);">{{ g.label }}</span>
+          <span style="font-size:11.5px; color:color-mix(in srgb, var(--color-text) 50%, transparent);">{{ g.count }}</span>
+          <div style="flex:1; height:1px; background:var(--color-divider);"></div>
+        </div>
+        <div style="display:grid; grid-template-columns:repeat(6, minmax(0,1fr)); gap:14px;">
+          <sc-for list="{{ g.items }}" as="it" hint-placeholder-count="6">
+            <div>
+              <div class="plate" style="aspect-ratio:{{ it.ratio }}; background:var(--color-neutral-200); overflow:hidden; display:grid; place-items:center; position:relative;">
+                <sc-if value="{{ it.exists }}" hint-placeholder-val="{{ true }}">
+                  <img src="{{ it.url }}" alt="{{ it.display }}" style="width:100%; height:100%; object-fit:cover;">
+                </sc-if>
+                <sc-if value="{{ it.missing }}" hint-placeholder-val="{{ false }}">
+                  <span style="font-size:11px; color:color-mix(in srgb, var(--color-text) 40%, transparent);">未生成</span>
+                </sc-if>
+              </div>
+              <div style="font-size:11.5px; margin-top:5px; line-height:1.5;">
+                <span class="tag tag-outline">{{ it.id }}</span> {{ it.name }}
+              </div>
+              <div style="font-size:10.5px; color:color-mix(in srgb, var(--color-text) 48%, transparent); line-height:1.5;">{{ it.sub }}</div>
+              <div style="font-size:10.5px; color:color-mix(in srgb, var(--color-text) 60%, transparent); line-height:1.6; margin-top:3px; max-height:44px; overflow:hidden;">{{ it.prompt }}</div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-for>
+
+    <!-- 视频片段：按章 → 镜 分组 -->
+    <sc-for list="{{ chapters }}" as="c" hint-placeholder-count="2">
+      <div style="margin-bottom:26px;">
+        <div style="display:flex; align-items:baseline; gap:10px; margin-bottom:12px;">
+          <span style="font-size:10px; letter-spacing:0.14em; color:var(--color-accent);">第 {{ c.n }} 章 · {{ c.title }}</span>
+          <span style="font-size:11.5px; color:color-mix(in srgb, var(--color-text) 50%, transparent);">{{ c.count }}</span>
+          <div style="flex:1; height:1px; background:var(--color-divider);"></div>
+        </div>
+        <div style="display:grid; grid-template-columns:repeat(6, minmax(0,1fr)); gap:14px;">
+          <sc-for list="{{ c.shots }}" as="s" hint-placeholder-count="6">
+            <div>
+              <div class="plate" style="aspect-ratio:{{ s.ratio }}; background:var(--color-neutral-200); overflow:hidden; display:grid; place-items:center;">
+                <sc-if value="{{ s.exists }}" hint-placeholder-val="{{ true }}">
+                  <video src="{{ s.url }}" controls="true" style="width:100%; height:100%; object-fit:cover;"></video>
+                </sc-if>
+                <sc-if value="{{ s.missing }}" hint-placeholder-val="{{ false }}">
+                  <span style="font-size:11px; color:color-mix(in srgb, var(--color-text) 40%, transparent);">未出片</span>
+                </sc-if>
+              </div>
+              <div style="font-size:11.5px; margin-top:5px; line-height:1.5;">
+                <span class="tag tag-outline">{{ s.id }}</span> {{ s.secs }}
+              </div>
+              <div style="font-size:10.5px; color:color-mix(in srgb, var(--color-text) 48%, transparent); line-height:1.5;">{{ s.meta }}</div>
+              <div style="font-size:10.5px; color:color-mix(in srgb, var(--color-text) 60%, transparent); line-height:1.6; margin-top:3px; max-height:44px; overflow:hidden;">{{ s.prompt }}</div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-for>
+
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1440,&quot;height&quot;:980}}">
+// The library reads the same JSON step 1 wrote, through web_server, so it works
+// with story_server stopped -- which is the normal state while steps 2 and 3
+// hold the GPU.
+class Component extends DCLogic {
+  state = { slug: "", projects: [], lib: null, err: "", graphOpen: false, sel: "" };
+
+  componentDidMount() {
+    const q = new URLSearchParams(location.search);
+    this.setState({ slug: q.get("slug") || "" });
+    this.loadProjects(q.get("slug") || "");
+  }
+
+  async loadProjects(want) {
+    try {
+      const r = await fetch("/api/projects");
+      const j = await r.json();
+      const list = j.projects || [];
+      const slug = want || (list[0] && list[0].slug) || "";
+      this.setState({ projects: list, slug });
+      if (slug) this.loadLib(slug);
+    } catch (e) { this.setState({ err: "读不到项目列表：" + e.message }); }
+  }
+
+  async loadLib(slug) {
+    try {
+      const r = await fetch("/api/library?slug=" + encodeURIComponent(slug));
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      this.setState({ lib: await r.json(), err: "" });
+    } catch (e) { this.setState({ lib: null, err: "读不到素材库：" + e.message }); }
+  }
+
+  pick(slug) {
+    return () => {
+      history.replaceState(null, "", "?slug=" + encodeURIComponent(slug));
+      this.setState({ slug, lib: null });
+      this.loadLib(slug);
+    };
+  }
+
+  renderVals() {
+    const st = this.state, lib = st.lib;
+    // 9:16 -> "9/16" for CSS aspect-ratio
+    // Assets keep the project's own aspect; a clip is always widescreen, and
+    // scene plates are 16:9 too, so only character/prop sheets are portrait.
+    const ratio = (lib && lib.aspect ? String(lib.aspect) : "9:16").replace(":", "/");
+    const clipRatio = "16/9";
+    const kb = n => n > 1048576 ? (n / 1048576).toFixed(1) + " MB" : Math.round(n / 1024) + " KB";
+
+    const groups = ((lib && lib.groups) || []).map(g => ({
+      label: g.label,
+      count: g.done + " / " + g.total + " 已生成",
+      items: (g.items || []).map(i => ({
+        id: i.id || "", name: i.name || i.label || "",
+        sub: [i.time_of_day, i.exists ? kb(i.bytes) : null, "seed " + (i.seed || 0)]
+          .filter(Boolean).join(" · "),
+        prompt: i.prompt || "", url: i.url || "", ratio: (i.aspect ? String(i.aspect).replace(":", "/") : ratio),
+        exists: !!i.exists, missing: !i.exists,
+        display: (i.display || i.id || "")
+      }))
+    }));
+
+    const chapters = ((lib && lib.chapters) || [])
+      .filter(c => (c.shots || []).length)
+      .map(c => ({
+        n: c.n, title: c.title || "",
+        count: c.done + " / " + c.total + " 已出片",
+        shots: (c.shots || []).map(s => ({
+          id: s.id || "", secs: (s.seconds || 10) + "s",
+          meta: [s.location_name || s.location_id,
+                 (s.characters || []).map(x => x.name || x.id).join("、"),
+                 s.shot_size, s.movement,
+                 s.lines ? (s.lines + " 句台词") : null,
+                 s.exists ? kb(s.bytes) : null].filter(Boolean).join(" · "),
+          prompt: s.video_prompt || "", url: s.url || "", ratio: clipRatio,
+          exists: !!s.exists, missing: !s.exists
+        }))
+      }));
+
+    const nothing = !groups.length && !chapters.length;
+
+    // 关系图：按派系排序后摆成一个环。确定性布局，不做力导向 ——
+    // 力导向每次打开位置都不一样，看同一份数据得到不同的图，反而更难读。
+    const rel = (lib && lib.relations) || {};
+    const rnodes = rel.nodes || [];
+    const redges = rel.edges || [];
+    const EDGE_COLOR = {
+      kin: "#b8860b", ally: "#4a7c59", enemy: "#a63d40",
+      mentor: "#3d6b99", romance: "#a4548a", duty: "#7a7466"
+    };
+    const W = 860, H = 560, cx = W / 2, cy = H / 2;
+    const R = Math.min(W, H) / 2 - 86;
+    const ordered = rnodes.slice().sort((a, b) =>
+      (a.faction - b.faction) || (a.id < b.id ? -1 : 1));
+    const pos = {};
+    ordered.forEach((n, i) => {
+      const ang = (i / Math.max(1, ordered.length)) * Math.PI * 2 - Math.PI / 2;
+      pos[n.id] = { x: cx + R * Math.cos(ang), y: cy + R * Math.sin(ang), ang };
+    });
+    const sel = st.sel;
+    const touches = e => !sel || e.from === sel || e.to === sel;
+    const linked = new Set();
+    if (sel) {
+      linked.add(sel);
+      redges.forEach(e => { if (e.from === sel) linked.add(e.to);
+                            if (e.to === sel) linked.add(e.from); });
+    }
+    const gEdges = redges.filter(e => pos[e.from] && pos[e.to]).map(e => {
+      const a = pos[e.from], b = pos[e.to];
+      // 向圆心稍稍弯一点，避免长弦互相压住
+      const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+      const qx = mx + (cx - mx) * 0.28, qy = my + (cy - my) * 0.28;
+      const on = touches(e);
+      return {
+        d: "M " + a.x.toFixed(1) + " " + a.y.toFixed(1) +
+           " Q " + qx.toFixed(1) + " " + qy.toFixed(1) +
+           " " + b.x.toFixed(1) + " " + b.y.toFixed(1),
+        color: EDGE_COLOR[e.type] || "#8a8378",
+        w: String(1 + Math.min(3, Number(e.strength) || 1)),
+        op: on ? "0.85" : "0.10"
+      };
+    });
+    const FACE = ["#c8b6a6", "#a6bcc8", "#c8a6a6", "#b6c8a6", "#c1a6c8"];
+    const gNodes = ordered.map(n => {
+      const p = pos[n.id];
+      const big = (n.role || "").indexOf("主角") >= 0 || (n.tier || "") === "主要";
+      const on = !sel || linked.has(n.id);
+      return {
+        id: n.id, name: n.name,
+        cx: p.x.toFixed(1), cy: p.y.toFixed(1),
+        r: big ? "26" : "20",
+        ty: (p.y + (p.y < cy ? -32 : 38)).toFixed(1),
+        fill: n.faction >= 0 ? FACE[n.faction % FACE.length] : "#ded8cf",
+        stroke: n.id === sel ? "#8a6d3b" : "#ffffff",
+        op: on ? "1" : "0.22",
+        textStyle: "font-size:12px; fill:var(--color-text); font-family:'Noto Serif SC',serif;",
+        pick: () => this.setState({ sel: st.sel === n.id ? "" : n.id })
+      };
+    });
+    const selNode = rnodes.find(n => n.id === sel);
+    const selEdges = sel ? redges.filter(e => e.from === sel || e.to === sel).map(e => ({
+      kind: e.kind, pair: e.pair,
+      line: [e.subtype, e.label, e.shared ? ("共有特征：" + e.shared) : "",
+             (e.turns || []).join("；")].filter(Boolean).join("　·　")
+    })) : [];
+
+    return {
+      graphOpen: st.graphOpen,
+      graphLabel: st.graphOpen ? "收起关系图" : "查看关系图",
+      toggleGraph: () => this.setState({ graphOpen: !st.graphOpen, sel: "" }),
+      gW: String(W), gH: String(H), gBox: "0 0 " + W + " " + H,
+      gEdges, gNodes,
+      legend: [["血缘", EDGE_COLOR.kin], ["盟友", EDGE_COLOR.ally], ["敌对", EDGE_COLOR.enemy],
+               ["师徒", EDGE_COLOR.mentor], ["情感", EDGE_COLOR.romance], ["职责", EDGE_COLOR.duty]]
+              .map(x => ({ name: x[0], style: "display:inline-block; width:18px; height:3px; background:" + x[1] + "; margin-right:5px; vertical-align:middle;" })),
+      hasSel: !!selNode,
+      selName: selNode ? (selNode.name + "（" + selNode.id + "）") : "",
+      selHint: sel ? "再点一次取消选中" : "点任一人物只看他的关系",
+      selEdges,
+
+      projTitle: lib ? (lib.title || lib.slug) : (st.slug || "未选择"),
+      projTabs: (st.projects || []).map(p => ({
+        label: (p.title || p.slug) + (p.slug === st.slug ? " ✓" : ""), pick: this.pick(p.slug)
+      })),
+      groups, chapters,
+      // 关系图在第一步生成，之后除了故事工坊没有第二个地方能看到它。
+      // 素材库是"这个项目有什么"的去处，所以在这里也能调阅，并且把 id 换成人名。
+      hasRel: !!((lib && lib.relations && (lib.relations.edges || []).length) ||
+                 (lib && lib.relations && (lib.relations.factions || []).length)),
+      relTally: lib && lib.relations
+        ? ((lib.relations.edges || []).length + " 条关系 · " +
+           (lib.relations.factions || []).length + " 派系") : "",
+      factions: ((lib && lib.relations && lib.relations.factions) || []).map(f => ({
+        name: f.name, stance: f.stance || "—",
+        line: [f.palette, f.insignia, f.members.join("、")].filter(Boolean).join("　·　")
+      })),
+      edges: ((lib && lib.relations && lib.relations.edges) || []).map(e => ({
+        kind: e.kind, pair: e.pair,
+        line: [e.subtype, e.label,
+               e.shared ? ("共有特征：" + e.shared) : "",
+               (e.turns || []).join("；")].filter(Boolean).join("　·　")
+      })),
+      empty: nothing, emptyMsg: st.err ||
+        (st.slug ? "这个项目还没有素材。先在故事工坊生成资产提示词，再跑第二步出图。"
+                 : "还没有项目。先去故事工坊写一部。"),
+      reload: () => this.loadProjects(st.slug)
+    };
+  }
+}
+</script>
+</body>
+</html>

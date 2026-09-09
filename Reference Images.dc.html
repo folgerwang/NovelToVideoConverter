@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/classical-d362d489-8175-478e-8156-5e2f8f43f744/styles.css">
+<script src="_ds/classical-d362d489-8175-478e-8156-5e2f8f43f744/_ds_bundle.js"></script>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@300;400;500;600&display=swap">
+<style>
+  body { margin:0; font-family:"Lora","Noto Serif SC",serif; }
+  h1,h2,h3,h4 { font-family:"Cormorant Garamond","Noto Serif SC",serif; }
+  a { color: var(--color-accent); text-decoration:none; }
+  .btn, .tag { white-space:nowrap; flex:none; }
+  @keyframes bookreel-slide { from { left:-38%; } to { left:100%; } }
+  /* 运行日志：默认收起，悬停展开；钉住后不再收起。 */
+  .runlog-body { max-height:0; overflow:auto; transition:max-height .22s ease; }
+  .runlog:hover > .runlog-body,
+  .runlog-pinned > .runlog-body { max-height:240px; }
+  .runlog-peek { transition:opacity .18s; }
+  .runlog:hover .runlog-peek,
+  .runlog-pinned .runlog-peek { opacity:0; }
+</style>
+</helmet>
+
+<div style="min-height:100vh; background:var(--color-bg); color:var(--color-text);">
+  <header style="display:flex; align-items:center; gap:14px; padding:14px 26px; border-bottom:1px solid var(--color-divider); position:sticky; top:0; background:var(--color-bg); z-index:20;">
+    <a href="/" style="font-family:'Cormorant Garamond',serif; font-size:24px; color:var(--color-accent);">书影 Bookreel</a>
+    <h3 style="margin:0; font-size:17px; flex:1;">出参考图 · 第二步：人物 / 场景 / 道具</h3>
+    <span class="tag tag-outline">步骤 2 / 3</span>
+    <span class="tag tag-neutral">只用档位 B（ComfyUI）· 不加载文本模型</span>
+    <span style="{{ comfyStyle }}">{{ comfyLabel }}</span>
+    <button class="btn btn-secondary" onClick="{{ checkComfy }}">体检</button>
+  </header>
+
+  <div style="{{ gpuBoxStyle }}" title="{{ gpuHint }}">
+    <div style="display:flex; align-items:center; gap:6px;">
+      <span style="opacity:.6;">VRAM</span>
+      <span style="font-variant-numeric:tabular-nums; font-weight:600;">{{ gpuVram }}</span>
+      <span style="{{ gpuPctStyle }}">{{ gpuPct }}</span>
+    </div>
+    <div style="height:4px; background:rgba(255,255,255,.16); border-radius:2px; overflow:hidden; margin-top:3px;">
+      <div style="{{ gpuBarStyle }}"></div>
+    </div>
+    <div style="display:flex; align-items:center; gap:6px; margin-top:3px; opacity:.75;">
+      <span>GPU {{ gpuUtil }}</span><span style="opacity:.5;">·</span><span>RAM {{ gpuHost }}</span><span style="opacity:.5;">·</span><span>{{ gpuDisk }}</span>
+    </div>
+  </div>
+  <div style="padding:22px 26px 90px; display:flex; flex-direction:column; gap:16px;">
+
+    <div style="border:1px solid var(--color-divider); border-radius:var(--radius-md); padding:16px 18px; background:var(--color-neutral-100);">
+      <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+        <span style="font-size:11px; color:color-mix(in srgb, var(--color-text) 45%, transparent);">项目：</span>
+        <sc-for list="{{ projectRows }}" as="pj" hint-placeholder-count="2">
+          <button class="btn btn-ghost" disabled="{{ busy }}" style="{{ pj.style }}" title="{{ pj.hint }}" onClick="{{ pj.open }}">{{ pj.label }}</button>
+        </sc-for>
+        <span style="flex:1;"></span>
+        <span style="font-size:11px; color:color-mix(in srgb, var(--color-text) 50%, transparent);">ComfyUI</span>
+        <input class="input" style="width:210px; font-size:12px;" value="{{ epComfy }}" onChange="{{ setEpComfy }}">
+        <button class="btn btn-ghost" onClick="{{ saveEp }}">保存</button>
+      </div>
+      <div style="font-size:12px; color:var(--color-accent-900); margin-top:8px;">{{ note }}</div>
+    </div>
+
+    <sc-if value="{{ hasPrompts }}" hint-placeholder-val="{{ true }}">
+      <div style="border:1px solid var(--color-divider); border-radius:var(--radius-md); padding:16px 18px; background:var(--color-neutral-100);">
+        <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+          <h4 style="margin:0; font-size:19px; flex:1;">{{ title }}</h4>
+          <span style="{{ tallyStyle }}">{{ tally }}</span>
+          <button class="btn btn-primary" disabled="{{ busy }}" style="{{ offStyle }}" onClick="{{ runMissing }}" title="逐张生成还没有图的资产，已有图的不动">{{ missingLabel }}</button>
+          <button class="btn btn-secondary" disabled="{{ busy }}" style="{{ offStyle }}" onClick="{{ runAll }}" title="所有资产逐张重出一遍（随机种子），旧图保留在历次列表里">全部重出</button>
+          <button class="btn btn-ghost" style="{{ stopStyle }}" onClick="{{ requestStop }}" title="当前这张出完后停止批量，不打断正在画的">{{ stopLabel }}</button>
+        </div>
+        <div style="{{ queueBoxStyle }}">
+          <div style="font-size:12.5px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+            <span class="{{ queueTagClass }}">{{ queueTag }}</span>
+            <span style="font-weight:600;">{{ barPct }}</span>
+            <span style="font-weight:600; color:var(--color-accent);">{{ barPercent }}</span>
+            <span style="color:color-mix(in srgb, var(--color-text) 72%, transparent);">{{ barDetail }}</span>
+            <span style="font-variant-numeric:tabular-nums; color:color-mix(in srgb, var(--color-text) 55%, transparent);">{{ barElapsed }}</span>
+            <span style="{{ queueIdleStyle }}">{{ queueIdle }}</span>
+          </div>
+          <div style="height:8px; background:var(--color-neutral-200); position:relative; overflow:hidden; margin-top:8px; border-radius:4px;">
+            <div style="{{ barStyle }}"></div>
+          </div>
+          <div style="{{ stepTrackStyle }}">
+            <div style="{{ stepStyle }}"></div>
+          </div>
+        </div>
+        <div style="font-size:12px; color:color-mix(in srgb, var(--color-text) 55%, transparent); margin-top:6px;">
+          出图由服务端队列执行：关掉本页、换设备、服务重启都不影响，批次会一直跑到全部出完。图存进 projects/{{ slug }}/assets/images/，素材库与第三步才看得到。第一次出图用锁定种子（可复现），「重出」换随机种子，每次构图不同。每次出图都保留在 _takes/ 里，图下方的小图是历次结果，点一张即选它为正式图，小图下的 × 删除那一次。
+        </div>
+      </div>
+
+      <sc-for list="{{ groups }}" as="g" hint-placeholder-count="3">
+        <div style="border:1px solid var(--color-divider); border-radius:var(--radius-md); padding:16px 18px; background:var(--color-neutral-100);">
+          <div style="display:flex; align-items:center; gap:12px;">
+            <h4 style="margin:0; font-size:17px; flex:1;">{{ g.label }}</h4>
+            <span class="tag tag-neutral">{{ g.tally }}</span>
+          </div>
+          <div style="{{ g.gridStyle }}">
+            <sc-for list="{{ g.cards }}" as="c" hint-placeholder-count="4">
+              <div style="{{ c.style }}">
+                <sc-if value="{{ c.multi }}">
+                  <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
+                    <span class="tag tag-outline">{{ c.id }}</span>
+                    <span style="font-size:14px; font-weight:600; flex:1;">{{ c.name }}</span>
+                    <span class="tag tag-neutral">{{ c.tally }}</span>
+                    <button class="btn btn-ghost" disabled="{{ busy }}" style="{{ c.btnStyle }}" onClick="{{ c.runAll }}">{{ c.btnLabel }}</button>
+                  </div>
+                  <div style="font-size:10.5px; line-height:1.6; color:color-mix(in srgb, var(--color-text) 50%, transparent); max-height:32px; overflow:hidden; margin-bottom:8px;">{{ c.prompt }}</div>
+                </sc-if>
+                <div style="{{ c.gridStyle }}">
+                  <sc-for list="{{ c.views }}" as="im" hint-placeholder-count="1">
+                    <div>
+                      <div class="plate" style="{{ im.plateStyle }}">
+                        <img src="{{ im.url }}" alt="{{ im.name }}" style="{{ im.imgStyle }}">
+                        <div style="{{ im.emptyStyle }}">未生成</div>
+                        <span style="{{ im.viewBadgeStyle }}">{{ im.viewBadge }}</span>
+                        <span style="{{ im.takeBadgeStyle }}">{{ im.takeBadge }}</span>
+                        <span title="{{ im.checkHint }}" style="{{ im.checkStyle }}">{{ im.checkBadge }}</span>
+                        <div style="{{ im.progWrapStyle }}">
+                          <div style="{{ im.progLabelStyle }}">{{ im.progLabel }}</div>
+                          <div style="height:5px; background:rgba(255,255,255,.25); position:relative; overflow:hidden;">
+                            <div style="{{ im.progStyle }}"></div>
+                          </div>
+                        </div>
+                      </div>
+                      <div style="{{ im.stripStyle }}">
+                        <sc-for list="{{ im.takes }}" as="tk" hint-placeholder-count="0">
+                                          <div style="flex:none; display:flex; flex-direction:column; align-items:center; gap:1px;">
+                            <div title="{{ tk.hint }}" style="{{ tk.style }}" onClick="{{ tk.pick }}">
+                              <img src="{{ tk.url }}" alt="" style="width:100%; height:100%; object-fit:cover; display:block;">
+                            </div>
+                            <span title="删除这一次" style="{{ tk.delStyle }}" onClick="{{ tk.del }}">×</span>
+                          </div>
+                        </sc-for>
+                      </div>
+                      <div style="{{ im.metaStyle }}">
+                        <div style="font-size:11.5px; margin-top:5px; display:flex; gap:6px; align-items:center;">
+                          <span class="tag tag-outline">{{ im.id }}</span>
+                          <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1;">{{ im.name }}</span>
+                        </div>
+                        <div style="font-size:10.5px; line-height:1.6; color:color-mix(in srgb, var(--color-text) 50%, transparent); max-height:44px; overflow:hidden; margin-top:2px;">{{ im.prompt }}</div>
+                      </div>
+                      <div style="display:flex; gap:6px; align-items:center; margin-top:4px;">
+                        <button class="btn btn-ghost" disabled="{{ busy }}" style="{{ im.btnStyle }}" onClick="{{ im.render }}">{{ im.btnLabel }}</button>
+                        <button class="btn btn-ghost" style="{{ im.delBtnStyle }}" onClick="{{ im.delCurrent }}">删除</button>
+                      </div>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </sc-for>
+    </sc-if>
+
+    <div class="{{ logClass }}" style="border:1px solid var(--color-divider); border-radius:var(--radius-md); padding:14px 16px; background:#14120f;">
+      <div style="display:flex; align-items:center; gap:10px;">
+        <span style="font-size:10px; letter-spacing:0.14em; color:#cbbf9f;">运行日志</span>
+        <span class="runlog-peek" style="{{ peekStyle }}">{{ peek }}</span>
+        <span style="flex:1;"></span>
+        <span style="{{ pinStyle }}" title="{{ pinHint }}" onClick="{{ togglePin }}">{{ pinLabel }}</span>
+        <span style="font-size:11px; color:#8f887d; cursor:pointer;" onClick="{{ clearLogs }}">清空</span>
+      </div>
+      <div class="runlog-body" style="font-family:ui-monospace,'Cascadia Mono',monospace; font-size:11px;">
+        <div style="height:8px;"></div>
+        <sc-for list="{{ logs }}" as="l" hint-placeholder-count="3">
+          <div style="{{ l.style }}">{{ l.t }}  {{ l.msg }}</div>
+        </sc-for>
+      </div>
+    </div>
+  </div>
+
+  <sc-if value="{{ busy }}" hint-placeholder-val="{{ false }}">
+    <div style="position:fixed; left:0; right:0; bottom:0; z-index:50; background:var(--color-bg); border-top:1px solid var(--color-divider); box-shadow:0 -2px 14px rgba(0,0,0,0.06);">
+      <div style="height:4px; background:var(--color-neutral-200); position:relative; overflow:hidden;">
+        <div style="{{ barStyle }}"></div>
+      </div>
+      <div style="height:3px; background:var(--color-neutral-100); position:relative; overflow:hidden;">
+        <div style="{{ stepStyle }}"></div>
+      </div>
+      <div style="display:flex; align-items:center; gap:14px; padding:9px 26px 10px; font-size:12.5px;">
+        <span class="tag tag-accent">出图</span>
+        <span style="color:color-mix(in srgb, var(--color-text) 72%, transparent);">{{ barDetail }}</span>
+        <span style="flex:1;"></span>
+        <span style="font-variant-numeric:tabular-nums; color:var(--color-accent); font-weight:600;">{{ barPct }}</span>
+        <span style="font-variant-numeric:tabular-nums; color:color-mix(in srgb, var(--color-text) 55%, transparent);">{{ barElapsed }}</span>
+      </div>
+    </div>
+  </sc-if>
+</div>
+
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1440,&quot;height&quot;:980}}">
+// 第二步只做一件事：把第一步写好的提示词交给 ComfyUI，出图，存进项目。
+// 提示词不在这里编 —— 那是 story_server 的 /assets 的职责，改提示词要回第一步。
+// 本页从 /api/library 读，出完图用 /api/save 落盘：浏览器写不了磁盘，而
+// ComfyUI 的 /view 地址只是它自己输出目录里的临时引用，不落盘素材库永远是 0 图。
+const at = p => (typeof location !== "undefined" && /^https?:$/.test(location.protocol)
+  ? location.protocol + "//" + (location.hostname || "127.0.0.1") + ":" + p
+  : "http://127.0.0.1:" + p);
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+class Component extends DCLogic {
+  state = {
+    slug: "", projects: [], lib: null, err: "",
+    ep: at(7860), comfyOk: null,
+    busy: "", done: 0, total: 0, startedAt: 0,
+    logs: [], logPinned: false
+  };
+
+  componentDidMount() {
+    let ep = at(7860);
+    try { ep = localStorage.getItem("bookreel.comfy") || ep; } catch (e) { /* 无 localStorage */ }
+    const q = new URLSearchParams(location.search);
+    this.setState({ ep, slug: q.get("slug") || "" }, () => {
+      this.loadProjects(q.get("slug") || "");
+      this.checkComfy();
+    });
+    this.timer = setInterval(() => { if (this.state.busy) this.forceUpdate(); }, 1000);
+    // 本页自己跑的批次每出一张就重读素材库；别的设备或别的标签页在出图时这页并不知道，
+    // 所以空闲时每 20 秒静默刷新一次，并顺带看一眼 ComfyUI 的队列长度。
+    this.poll = setInterval(() => {
+      if (!this.state.slug) return;
+      this.pollBatch();
+      if (!this.state.busy) { this.loadLib(this.state.slug); this.checkQueue(); }
+    }, 3000);
+    this.checkQueue();
+    this.gpuTimer = setInterval(() => this.pollGpu(), 3000); this.pollGpu();
+  }
+  componentWillUnmount() { if (this.timer) clearInterval(this.timer); if (this.poll) clearInterval(this.poll); if (this.ws) { try { this.ws.close(); } catch (e) {} } }
+
+  // ComfyUI 只把逐步进度（progress: value/max）推给提交那条 prompt 的 client_id，
+  // 而且一个 id 只认最后连上的一个 socket。所以每个标签页用自己的 id：提交 /prompt 用它，
+  // 开 /ws 也用它，这个标签页跑的每一张就都能看到“第几步 / 共几步”。
+  // 出图的是服务端，它用固定的 client_id 提交；这一页用同一个 id 开 socket 就能看到步数。
+  // ComfyUI 一个 id 只认最后连上的那个 socket，所以多开几个标签页时只有最后打开的看得到步数。
+  clientId() { return "bookreel-batch"; }
+  ensureWs() {
+    if (this.ws && (this.ws.readyState === 0 || this.ws.readyState === 1) && this.wsEp === this.state.ep) return;
+    try { if (this.ws) this.ws.close(); } catch (e) {}
+    const url = this.state.ep.replace(/^http/, "ws") + "/ws?clientId=" + encodeURIComponent(this.clientId());
+    this.wsEp = this.state.ep;
+    let ws;
+    try { ws = new WebSocket(url); } catch (e) { this.log("进度通道打不开：" + e.message, "warn"); return; }
+    ws.onmessage = ev => {
+      if (typeof ev.data !== "string") return;            // 二进制帧是预览图，不要
+      let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
+      const d = m.data || {};
+      if (m.type === "progress" && d.max) this.setState({ step: d.value, steps: d.max, stepNode: d.node || "" });
+      else if (m.type === "executing" && d.node === null) { this.setState({ step: 0, steps: 0, stepNode: "" }); this.pollBatch(); }
+      else if (m.type === "execution_error") this.log("ComfyUI 执行出错：" + JSON.stringify(d.exception_message || d).slice(0, 200), "error");
+      else if (m.type === "status" && d.status && d.status.exec_info)
+        this.setState({ queue: { running: this.state.busy ? 1 : 0, pending: Math.max(0, (d.status.exec_info.queue_remaining || 0) - (this.state.busy ? 1 : 0)) } });
+    };
+    ws.onclose = () => { this.ws = null; };
+    this.ws = ws;
+  }
+
+  async pollGpu() {
+    try {
+      const g = await (await fetch("/gpu")).json();
+      let host = "";
+      if (g && g.host) host = g.host.used_gb + "/" + g.host.total_gb + " GB";
+      this.setState({ gpu: g, gpuHost: host });
+    } catch (e) { /* 本地直接开文件时没有 /gpu，安静跳过 */ }
+  }
+
+  async checkQueue() {
+    try {
+      const q = await (await fetch(this.state.ep + "/queue")).json();
+      this.setState({ queue: { running: (q.queue_running || []).length, pending: (q.queue_pending || []).length } });
+    } catch (e) { this.setState({ queue: null }); }
+  }
+
+  log(msg, lv) {
+    const t = new Date().toTimeString().slice(0, 8);
+    this.setState(s => ({ logs: s.logs.concat([{ t, msg, lv: lv || "info" }]).slice(-200) }));
+  }
+
+  async loadProjects(want) {
+    try {
+      const j = await (await fetch("/api/projects")).json();
+      const list = j.projects || [];
+      const slug = want || (list[0] && list[0].slug) || "";
+      this.setState({ projects: list, slug });
+      if (slug) this.loadLib(slug);
+    } catch (e) { this.setState({ err: "读不到项目列表：" + e.message }); }
+  }
+
+  async loadLib(slug) {
+    this.pollBatch(slug);
+    try {
+      const r = await fetch("/api/library?slug=" + encodeURIComponent(slug));
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      this.setState({ lib: await r.json(), err: "" });
+    } catch (e) { this.setState({ lib: null, err: "读不到素材库：" + e.message }); }
+  }
+
+  async checkComfy() {
+    try {
+      const r = await fetch(this.state.ep + "/system_stats");
+      this.setState({ comfyOk: r.ok });
+    } catch (e) { this.setState({ comfyOk: false }); }
+  }
+
+  // 把某一次出图选为正式图：服务端把它复制回 assets/images/<file>，后面的步骤读的还是老路径。
+  // 选图与删图只动磁盘上已有的文件，不碰 ComfyUI 队列，所以出图期间照常可用；
+  // 只有「出图/重出」按钮在跑的时候才锁。
+  async pickTake(im, n) {
+    try {
+      const r = await fetch("/api/take", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slug: this.state.slug, path: "assets/images/" + im.file, take: n })
+      });
+      const j = await r.json();
+      if (!j.ok) throw new Error(j.error || ("HTTP " + r.status));
+      this.log("已选用 " + (im.name || im.id) + " 的第 " + n + " 次出图");
+      await this.loadLib(this.state.slug);
+    } catch (e) { this.log("× 选图失败：" + (e.message || e), "error"); }
+  }
+
+  async deleteTake(im, n) {
+    if (!window.confirm("删除 " + (im.name || im.id) + " 的第 " + n + " 次出图？文件会从磁盘移除。")) return;
+    try {
+      const r = await fetch("/api/take/delete", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slug: this.state.slug, path: "assets/images/" + im.file, take: n })
+      });
+      const j = await r.json();
+      if (!j.ok) throw new Error(j.error || ("HTTP " + r.status));
+      this.log("已删除 " + (im.name || im.id) + " 的第 " + n + " 次出图" + (j.exists ? "" : "，这张资产回到未生成"));
+      await this.loadLib(this.state.slug);
+    } catch (e) { this.log("× 删除失败：" + (e.message || e), "error"); }
+  }
+
+  // 出图交给服务端的队列：关掉这一页、手机熄屏、网络断了，批次都照常跑；
+  // 服务端重启也会自己续上。这一页只负责看进度和喊停。
+  async runBatch(items, what) {
+    const keys = items.map(i => i.key).filter(Boolean);
+    if (!keys.length) { this.log("没有要出的图"); return; }
+    const redo = items.every(i => i.exists);
+    try {
+      const r = await fetch("/api/batch/start", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slug: this.state.slug, keys, mode: redo ? "redo" : "first", front: keys.length <= 4 })
+      });
+      const j = await r.json();
+      if (!j.ok) throw new Error(j.error || ("HTTP " + r.status));
+      this.log((j.appended ? "已追加到正在跑的批次：" : "已交给服务端队列：") + keys.length + " 张" + (redo ? "（随机种子重出）" : ""));
+      this.ensureWs();
+      await this.pollBatch();
+    } catch (e) { this.log("× 提交失败：" + (e.message || e), "error"); }
+  }
+
+  async requestStop() {
+    try {
+      await fetch("/api/batch/stop", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slug: this.state.slug }) });
+      this.log("收到停止：当前这张出完就停", "warn");
+      await this.pollBatch();
+    } catch (e) { this.log("× 停止失败：" + (e.message || e), "error"); }
+  }
+
+  // 服务端队列的状态：正在出哪张、出了几张、失败几张、上次出错。
+  async pollBatch(slugArg) {
+    const slug = slugArg || this.state.slug;
+    if (!slug) return;
+    try {
+      const b = await (await fetch("/api/batch?slug=" + encodeURIComponent(slug))).json();
+      const wasRunning = !!(this.state.batch && this.state.batch.running);
+      const wasCurrent = this.state.batch && this.state.batch.current;
+      this.setState({ batch: b, busy: b.running ? (b.current || "…") : "", current: b.running ? (b.current || "") : "" });
+      if (b.running) this.ensureWs();
+      // 每完成一张就重读素材库，新图才会出现；批次结束也读一次。
+      if ((wasCurrent && wasCurrent !== b.current) || (wasRunning && !b.running)) await this.loadLib(this.state.slug);
+    } catch (e) { /* 服务端没响应就下次再问 */ }
+  }
+
+  allItems() {
+    const g = (this.state.lib && this.state.lib.groups) || [];
+    return g.reduce((a, x) => a.concat(x.items || []), []);
+  }
+
+  renderVals() {
+    const st = this.state;
+    const lib = st.lib;
+    const groups = (lib && lib.groups) || [];
+    const all = this.allItems();
+    const missing = all.filter(i => !i.exists);
+    const gpu = (st.gpu && st.gpu.gpus && st.gpu.gpus[0]) || null;
+    const gpuPct = gpu && gpu.mem_total_gb ? Math.round(gpu.mem_used_gb * 100 / gpu.mem_total_gb) : null;
+    const bt = st.batch || {};
+    const busy = !!bt.running;
+    const OFF = "opacity:.42; cursor:not-allowed;";
+    const btTotal = (bt.done || []).length + (bt.queue || []).length + (bt.current ? 1 : 0);
+    // finished images, plus how far the current one is through its sampling steps
+    const frac = (bt.current && st.steps) ? Math.min(0.95, st.step / st.steps) : 0;
+    const pctFine = btTotal ? Math.round(((bt.done || []).length + frac) * 1000 / btTotal) / 10 : (bt.status === "done" ? 100 : 0);
+    const nameOf = key => { const it = all.find(i => i.key === key); return it ? (it.name || it.id) : key; };
+    const last = st.logs[st.logs.length - 1];
+
+    return {
+      slug: st.slug,
+      busy,
+      offStyle: busy ? OFF : "",
+      gpuBoxStyle: "position:fixed; top:10px; right:12px; z-index:80; font-size:10.5px; line-height:1.35; " +
+        "font-family:ui-monospace,'Cascadia Mono',monospace; color:#f2ede4; background:rgba(20,18,15,.82); " +
+        "border:1px solid rgba(242,237,228,.18); border-radius:5px; padding:5px 8px; min-width:132px; display:" + (gpu ? "block" : "none") + ";",
+      gpuVram: gpu ? (gpu.mem_used_gb + " / " + gpu.mem_total_gb + " GB") : "",
+      gpuPct: gpuPct === null ? "" : (gpuPct + "%"),
+      gpuPctStyle: "margin-left:auto; font-variant-numeric:tabular-nums; color:" +
+        (gpuPct === null ? "#8f887d" : gpuPct >= 90 ? "#e0a3a3" : gpuPct >= 70 ? "#cbbf9f" : "#8fbf8f") + ";",
+      gpuBarStyle: "height:100%; width:" + (gpuPct === null ? 0 : gpuPct) + "%; transition:width .6s; background:" +
+        (gpuPct === null ? "#8f887d" : gpuPct >= 90 ? "#b5533c" : gpuPct >= 70 ? "#cbbf9f" : "#6f9f6f") + ";",
+      gpuUtil: gpu && gpu.util != null ? (gpu.util + "%") : "—",
+      gpuHost: st.gpuHost || "—",
+      gpuDisk: st.gpu && st.gpu.disk ? (Math.round(st.gpu.disk.free_gb) + " GB free") : "—",
+      gpuHint: gpu ? (gpu.name + "  ·  显存 " + gpu.mem_used_gb + "/" + gpu.mem_total_gb + " GB  ·  GPU " + (gpu.util != null ? gpu.util + "%" : "?")) : "",
+      stopStyle: "display:" + (busy ? "inline-block" : "none") + "; color:#b5533c; border-color:color-mix(in srgb, #b5533c 45%, transparent);",
+      stopLabel: bt.stop_requested ? "本张出完即停…" : "停止批量",
+      queueTag: busy ? "正在出图" : "服务端队列",
+      queueTagClass: busy ? "tag tag-accent" : "tag tag-neutral",
+      queueIdle: busy ? "" : (bt.status === "done" ? ("上一批已全部出完（" + (bt.done || []).length + " 张）")
+        : bt.status === "done_with_failures" ? ("上一批出完，失败 " + (bt.failed || []).length + " 张")
+        : bt.status === "stopped" ? "上一批已手动停止" : (bt.status ? "空闲" : "正在连接服务端…")),
+      queueIdleStyle: "color:color-mix(in srgb, var(--color-text) 55%, transparent); display:" + (busy ? "none" : "inline") + ";",
+      queueBoxStyle: "margin-top:12px; padding:10px 12px; border-radius:var(--radius-sm); border:1px solid " +
+        (busy ? "var(--color-accent)" : "var(--color-divider)") + "; background:" + (busy ? "color-mix(in srgb, var(--color-accent) 8%, transparent)" : "var(--color-neutral-100)") + ";",
+      barPercent: btTotal ? (pctFine + "%") : "",
+      stepTrackStyle: "height:3px; background:var(--color-neutral-100); position:relative; overflow:hidden; margin-top:3px; border-radius:2px; display:" + (busy ? "block" : "none") + ";",
+      requestStop: () => this.requestStop(),
+      epComfy: st.ep,
+      setEpComfy: e => { const v = e.target.value; this.setState({ ep: v }); },
+      saveEp: () => {
+        try { localStorage.setItem("bookreel.comfy", st.ep); } catch (e) { /* 忽略 */ }
+        this.log("ComfyUI 端点已保存：" + st.ep);
+        this.checkComfy();
+      },
+      checkComfy: () => this.checkComfy(),
+      comfyLabel: (st.comfyOk === null ? "未体检" : (st.comfyOk ? "ComfyUI 在线" : "ComfyUI 未连接")) +
+        (st.queue && (st.queue.running || st.queue.pending) ? ("，队列 " + st.queue.running + " 在跑 / " + st.queue.pending + " 等待") : ""),
+      comfyStyle: "font-size:10.5px; padding:1px 8px; border-radius:3px; background:" +
+        (st.comfyOk ? "var(--color-accent-100)" : "var(--color-neutral-200)") + "; color:" +
+        (st.comfyOk ? "var(--color-accent-800)" : "var(--color-neutral-700)") + ";",
+
+      projectRows: (st.projects || []).map(pj => ({
+        label: (pj.title || pj.slug) + "（" + pj.images + " 图）",
+        hint: pj.slug + "：提示词 " + pj.prompts + " 条，已出图 " + pj.images + " 张",
+        style: "font-size:11.5px; padding:2px 9px;" +
+          (pj.slug === st.slug ? " color:var(--color-accent); border-color:var(--color-accent);" : "") +
+          (busy ? " " + OFF : ""),
+        open: () => { if (!busy) { this.setState({ slug: pj.slug }); this.loadLib(pj.slug); } }
+      })),
+
+      // 没有提示词时说清楚下一步该去哪，而不是显示一个空页面。
+      hasPrompts: all.length > 0,
+      note: st.err ? st.err
+        : (!st.slug ? "还没有任何项目，先去第一步写小说。"
+          : (all.length ? "" :
+             "这个项目还没有资产提示词。回第一步（写小说）的蓝图区点「生成资产提示词」，" +
+             "它会写出 projects/" + st.slug + "/assets/prompts.json，本页照着它出图。")),
+
+      title: (lib && lib.title) || st.slug,
+      tally: all.length ? (all.filter(i => i.exists).length + " / " + all.length + " 张已出") : "",
+      tallyStyle: "font-size:10.5px; padding:1px 8px; border-radius:3px; background:var(--color-neutral-200); color:var(--color-neutral-700);",
+      missingLabel: "全部出图（剩余 " + missing.length + "）",
+      runMissing: () => this.runBatch(missing, "出图"),
+      runAll: () => this.runBatch(all, "出图"),
+
+      groups: groups.map(g => {
+        // 一个人物的正/左/右/背四张放进同一张卡片；一处场景某个时段的九个角度也放进同一张卡片；
+        // 道具还是一张一卡。
+        const isChar = g.kind === "character";
+        const isLoc = g.kind === "location";
+        const tile = (im, inCard) => ({
+          id: im.id, name: im.name || im.label || im.id,
+          prompt: im.prompt || "",
+          url: im.url || "",
+          plateStyle: "aspect-ratio:" + ((im.aspect || "9:16") === "16:9" ? "16/9" : "9/16") + "; background:var(--color-neutral-200); overflow:hidden; position:relative;",
+          imgStyle: im.exists ? "width:100%; height:100%; object-fit:cover;" : "display:none;",
+          emptyStyle: "position:absolute; inset:0; display:" + (im.exists ? "none" : "flex") +
+            "; align-items:center; justify-content:center; font-size:11px; color:color-mix(in srgb, var(--color-text) 40%, transparent);",
+          // 正在出的那一张：图底部压一条进度，采样步数走完、落盘、素材库重读后它就没了。
+          progWrapStyle: "position:absolute; left:0; right:0; bottom:0; display:" + (im.key === bt.current ? "block" : "none") +
+            "; background:linear-gradient(to top, rgba(0,0,0,.65), rgba(0,0,0,0)); padding:14px 0 0;",
+          progLabel: im.key === bt.current
+            ? (st.steps ? ("出图中 · 第 " + st.step + " / " + st.steps + " 步") : "出图中 · 装载模型")
+            : "",
+          progLabelStyle: "font-size:10.5px; color:#f2ede4; padding:0 6px 3px; text-shadow:0 1px 2px rgba(0,0,0,.6);",
+          progStyle: st.steps
+            ? ("position:absolute; top:0; left:0; height:100%; background:var(--color-accent); width:" + Math.round(st.step * 100 / st.steps) + "%; transition:width .3s;")
+            : ("position:absolute; top:0; height:100%; width:35%; background:var(--color-accent); animation:bookreel-slide 1.2s linear infinite;"),
+          viewBadge: im.view || "",
+          viewBadgeStyle: "position:absolute; left:5px; top:5px; font-size:10px; padding:1px 6px; border-radius:3px; " +
+            "background:rgba(0,0,0,.55); color:#f2ede4; display:" + (im.view ? "inline" : "none") + ";",
+          metaStyle: inCard ? "display:none;" : "",
+          btnLabel: im.exists ? (inCard ? "重出（" + (im.takes || []).length + "）" : "重出（已 " + (im.takes || []).length + " 次）") : "出图",
+          btnStyle: "font-size:11px; padding:1px 8px;" + (busy ? " " + OFF : ""),
+          render: () => this.runBatch([im], "出图"),
+          // 删掉当前正式图（这一次出图）；还有别的次数就自动换上最新的一次，没有就回到未生成。
+          delBtnStyle: "font-size:11px; padding:1px 8px; color:#b5533c; border-color:color-mix(in srgb, #b5533c 45%, transparent); display:" + (im.exists && im.take ? "inline-block" : "none") + ";",
+          delCurrent: () => this.deleteTake(im, im.take),
+          takeBadge: im.take ? ("第 " + im.take + " 次") : "",
+          // 审核结果：服务端出完每张都让视觉模型核对一遍；通过打勾，没通过打叹号并把问题写在悬停提示里
+          checkBadge: (() => { const t = (im.takes || []).find(x => x.active); const c = t && t.check; return !c ? "" : c.ok === null ? "？" : c.ok ? "✓ 已核" : "⚠ " + (c.problems || []).length; })(),
+          checkHint: (() => { const t = (im.takes || []).find(x => x.active); const c = t && t.check; return !c ? "" : c.ok ? ("审核通过（" + c.model + "，" + c.seconds + " 秒）") : ((c.problems || []).join("；") + (c.attempt ? ("  ·  第 " + c.attempt + " 次尝试") : "")); })(),
+          checkStyle: (() => { const t = (im.takes || []).find(x => x.active); const c = t && t.check; return "position:absolute; left:5px; bottom:5px; font-size:10px; padding:1px 6px; border-radius:3px; color:#fff; display:" + (c ? "inline" : "none") + "; background:" + (!c ? "" : c.ok === null ? "rgba(90,90,90,.7)" : c.ok ? "rgba(46,125,50,.8)" : "rgba(181,83,60,.9)") + ";"; })(),
+          takeBadgeStyle: "position:absolute; right:5px; top:5px; font-size:10px; padding:1px 6px; border-radius:3px; " +
+            "background:rgba(0,0,0,.55); color:#f2ede4; display:" + (im.take ? "inline" : "none") + ";",
+          stripStyle: "display:" + ((im.takes || []).length > 0 ? "flex" : "none") +
+            "; gap:4px; margin-top:5px; overflow-x:auto; padding-bottom:2px;",
+          takes: (im.takes || []).map(tk => ({
+            url: tk.url,
+            hint: "第 " + tk.n + " 次 · " + (tk.seed != null ? "种子 " + tk.seed + " · " : "") + new Date(tk.mtime * 1000).toLocaleString() +
+              " · " + Math.round(tk.bytes / 1024) + " KB" + (tk.check ? (tk.check.ok ? " · 审核通过" : " · 审核：" + (tk.check.problems || []).join("；")) : "") + (tk.active ? "（当前正式图）" : "，点击选用"),
+            style: "flex:none; " + ((im.aspect || "9:16") === "16:9" ? "width:60px; aspect-ratio:16/9;" : "width:34px; aspect-ratio:9/16;") + " border-radius:3px; overflow:hidden; cursor:pointer; " +
+              "border:2px solid " + (tk.active ? "var(--color-accent)" : (tk.check && tk.check.ok === false ? "#b5533c" : "transparent")) + ";" +
+              (tk.active ? "" : " opacity:.7;"),
+            pick: () => this.pickTake(im, tk.n),
+            del: () => this.deleteTake(im, tk.n),
+            delStyle: "font-size:15px; line-height:1; cursor:pointer; font-weight:700; color:#b5533c;"
+          }))
+        });
+        let cards;
+        if (isChar || isLoc) {
+          const byKey = new Map();
+          for (const im of (g.items || [])) {
+            const k = isLoc ? (im.id + "|" + (im.time_of_day || "")) : im.id;
+            if (!byKey.has(k)) byKey.set(k, []); byKey.get(k).push(im);
+          }
+          cards = Array.from(byKey, ([k, views]) => {
+            const missing = views.filter(v => !v.exists);
+            const tod = isLoc ? (views[0].time_of_day || "") : "";
+            return {
+              multi: true, id: views[0].id,
+              name: String(views[0].name || views[0].label || views[0].id).split(" · ")[0] + (tod ? " · " + tod : ""),
+              prompt: views[0].body || views[0].prompt || "",
+              tally: (views.length - missing.length) + " / " + views.length,
+              btnLabel: missing.length ? ("全部出图（剩余 " + missing.length + "）") : (isLoc ? "九面全部重出" : "四面全部重出"),
+              btnStyle: "font-size:11px; padding:1px 8px;" + (busy ? " " + OFF : ""),
+              runAll: () => this.runBatch(missing.length ? missing : views, "出图"),
+              style: "border:1px solid var(--color-divider); border-radius:var(--radius-sm); padding:12px 14px; background:var(--color-bg);",
+              gridStyle: isLoc
+                ? "display:grid; grid-template-columns:repeat(3, minmax(160px,1fr)); gap:10px;"
+                : "display:grid; grid-template-columns:repeat(4, minmax(110px,1fr)); gap:10px;",
+              views: views.map(v => tile(v, true))
+            };
+          });
+        } else {
+          cards = (g.items || []).map(im => ({ multi: false, style: "", gridStyle: "", views: [tile(im, false)] }));
+        }
+        return {
+          label: g.label,
+          tally: g.done + " / " + g.total,
+          gridStyle: (isChar || isLoc)
+            ? "display:grid; grid-template-columns:1fr; gap:12px; margin-top:14px;"
+            : "display:grid; grid-template-columns:repeat(auto-fill, minmax(150px,1fr)); gap:12px; margin-top:14px;",
+          cards
+        };
+      }),
+
+      barDetail: (bt.current ? (nameOf(bt.current) + "  ·  ") : "") + (st.steps ? ("第 " + st.step + " / " + st.steps + " 步") : (bt.running ? "装载模型 / 排队中" : "")) +
+        (bt.failed && bt.failed.length ? ("  ·  失败 " + bt.failed.length) : "") + (bt.last_error ? ("  ·  " + bt.last_error) : ""),
+      barPct: bt.running ? ("第 " + ((bt.done || []).length + 1) + " / " + ((bt.done || []).length + (bt.queue || []).length + 1) + " 张") : "",
+      barElapsed: (bt.started ? (() => { const e = Math.floor(Date.now() / 1000 - bt.started); return Math.floor(e / 3600) + ":" + String(Math.floor(e % 3600 / 60)).padStart(2, "0") + ":" + String(e % 60).padStart(2, "0"); })() : "") +
+        (bt.current_started ? ("  （本张 " + Math.floor(Date.now() / 1000 - bt.current_started) + " 秒）") : ""),
+      // 条子分两段：粗的是整批（已完成张数），细的是本张（采样步数）。步数在模型装载和 VAE 解码时不动，
+      // 所以本张没有步数时用滑动动画表示“在干活但没法量化”。
+      barStyle: "position:absolute; top:0; left:0; height:100%; background:var(--color-accent); width:" + Math.max(busy ? 1.5 : 0, pctFine) + "%; transition:width .6s;",
+      stepStyle: st.steps
+        ? ("position:absolute; top:0; left:0; height:100%; background:color-mix(in srgb, var(--color-accent) 55%, white); width:" + Math.round(st.step * 100 / st.steps) + "%; transition:width .3s;")
+        : ("position:absolute; top:0; height:100%; width:30%; background:color-mix(in srgb, var(--color-accent) 40%, white); animation:bookreel-slide 1.2s linear infinite;"),
+
+      logs: st.logs.slice().reverse().map(l => ({
+        t: l.t, msg: l.msg,
+        style: "line-height:1.65; color:" + (l.lv === "error" ? "#e0a3a3" : l.lv === "warn" ? "#cbbf9f" : "#8f887d") + ";"
+      })),
+      clearLogs: () => this.setState({ logs: [] }),
+
+      // 收起时只留一行最新日志；钉住后交给 CSS 常驻展开。
+      logClass: "runlog" + (st.logPinned ? " runlog-pinned" : ""),
+      togglePin: () => this.setState(s2 => ({ logPinned: !s2.logPinned })),
+      pinLabel: st.logPinned ? "已固定" : "固定",
+      pinHint: st.logPinned ? "取消固定，恢复移开即收起" : "固定展开，鼠标移开也不收起",
+      pinStyle: "font-size:11px; cursor:pointer; color:" + (st.logPinned ? "#cbbf9f" : "#8f887d") + ";",
+      peek: last ? (last.t + "  " + last.msg) : "",
+      peekStyle: "font-size:11px; max-width:52%; overflow:hidden; text-overflow:ellipsis; " +
+        "white-space:nowrap; font-family:ui-monospace,'Cascadia Mono',monospace; color:" +
+        (last && last.lv === "error" ? "#e0a3a3" : last && last.lv === "warn" ? "#cbbf9f" : "#8f887d") + ";"
+    };
+  }
+}
+</script>
+</body>
+</html>
