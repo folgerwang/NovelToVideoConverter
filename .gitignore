@@ -44,3 +44,9 @@ third_party/
 
 # llama.cpp prebuilt binaries (get-llama.bat fetches them)
 llama/
+
+# Generated stories, chapters, shot scripts and asset libraries (step 1-3 output)
+projects/
+
+# Local tool symlinks (launch.sh points PATH here; ffmpeg -> venvs/tools imageio-ffmpeg)
+bin/
