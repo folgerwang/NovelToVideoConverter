@@ -654,7 +654,15 @@ def _need_blueprint(slug):
     return bp
 
 
-def _world_brief(bp):
+# The film is widescreen and so are the location plates a shot starts from
+# (assets render locations at 16:9 regardless of this); visual_style.aspect
+# describes the character reference sheets, which stay 9:16 as reference art.
+# Letting the sheet aspect ride into the shot text is how all 108 of xuemang's
+# video_prompts came to say 9:16竖幅 over a 1088x608 landscape frame.
+FILM_ASPECT = "16:9"
+
+
+def _world_brief(bp, aspect=None):
     """The paragraph every downstream prompt is anchored to.
 
     Steps 2 and 3 must not re-invent the world, so each call gets the same
@@ -674,7 +682,7 @@ def _world_brief(bp):
            w.get("culture", ""), w.get("social_order", ""), w.get("tech_level", ""),
            bp.get("language", "zh-CN"),
            v.get("palette", ""), v.get("film_stock", ""), v.get("lighting", ""),
-           v.get("aspect", "9:16"))
+           aspect or v.get("aspect", "9:16"))
     )
 
 
@@ -1565,7 +1573,10 @@ def make_script(req: ScriptReq):
         "%s\n\n人物：\n%s\n\n配音设定：\n%s\n\n场景：\n%s\n\n"
         "全片声音风格：配乐 %s；环境声底 %s；混音 %s；语言文白程度 %s\n\n"
         "%s\n\n"
-        "把下面这一章拆成分镜。每镜严格 %d 秒。%s\n"
+        "把下面这一章拆成分镜。每镜的 seconds 按这一拍需要多久来定，%d 秒上下浮动，"
+        "短的三四秒，长的十二三秒，不要每镜都写同一个数——上一章 108 个镜头"
+        "全是 10 秒，剪到一起像节拍器，没有快慢。一句话就说完的对白给短镜，"
+        "交代空间的大远景和情绪落点给长镜。%s\n"
         "硬性要求：\n"
         "- location_id 与 characters 必须用制作圣经里的 id。\n"
         "- camera 的每一栏都要填，movement_motivation 必须解释为什么这样动。\n"
@@ -1596,7 +1607,7 @@ def make_script(req: ScriptReq):
         "青年男子”），服饰带朝代名。\n"
         "- first_frame_ref 指向本镜首帧参考图（场景 id 或人物 id）。\n"
         "\n输出格式：\n%s\n\n第 %d 章正文：\n%s"
-        % (_world_brief(bp), _cast_brief(bp, ch.get("characters")),
+        % (_world_brief(bp, FILM_ASPECT), _cast_brief(bp, ch.get("characters")),
            _voice_brief(bp, ch.get("characters")),
            _loc_brief(bp, ch.get("locations")),
            audio.get("score", ""), audio.get("ambience_bed", ""),

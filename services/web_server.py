@@ -221,6 +221,24 @@ def _take_delete(full, n):
     return rest
 
 
+def _clip_seconds(full):
+    """Rendered length of the live take, from its sidecar. 0.0 if unknown.
+
+    The subtitle timeline is built from this, not from how long the narration
+    ran: a chapter's shots are what advance the clock, and 50 of them say
+    nothing at all.
+    """
+    d, _ext = _take_dir(full)
+    n = _take_active(full)
+    if not n:
+        return 0.0
+    meta = _read_json(os.path.join(d, "%d.json" % n), {}) or {}
+    try:
+        return float(meta.get("seconds") or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def _takes_for(slug, rel, full):
     """What the page needs to draw the strip: one row per take, newest last."""
     d, ext = _take_dir(full)
@@ -739,7 +757,24 @@ H3 = "http://127.0.0.1:9000"
 # of finished film at 1088x608 (~56 min a shot) and ~5.9 at 1312x736 (~88 min),
 # which is what it runs at now. Canvas comes from H3_MAX_PIXELS in launch.sh,
 # not from this constant.
-VIDEO_SECONDS = float(os.environ.get("BOOKREEL_CLIP_SECONDS", "15.0"))
+# A CAP, not a floor. It used to be a floor - target was max(MIN, 15, voice) -
+# so a shot carrying a four-character line still got fifteen seconds of
+# picture. Measured over the 51 takes on disk: 8.8 s of dead air per voiced
+# clip on average (C01S02 said 1.3 s over 15.0 s), and 24 of 51 clips had no
+# audio at all and ran fifteen silent seconds. That is what made the chapter
+# feel wrong when the shots were cut together, and it is also why a chapter
+# costs what it costs: sizing the picture to what it carries is ~38% of the
+# render time.
+VIDEO_MAX_SECONDS = float(os.environ.get("BOOKREEL_CLIP_SECONDS", "15.0"))
+# How much picture to keep after the last word - room to land the line and to
+# cut on, not another beat of story.
+VIDEO_HANDLE_SECONDS = float(os.environ.get("BOOKREEL_CLIP_HANDLE", "1.5"))
+# A shot with nothing said still has to breathe, but not equally: a wide
+# establishing the courtyard holds, a cutaway to a hand on a seal does not.
+# Sizing the 24 silent shots off shot_size keeps them from all coming out the
+# same length, which is half of what made the cut feel mechanical.
+VIDEO_SILENT_SECONDS = float(os.environ.get("BOOKREEL_CLIP_SILENT_SECONDS", "3.75"))
+VIDEO_SILENT_WIDE_SECONDS = float(os.environ.get("BOOKREEL_CLIP_SILENT_WIDE_SECONDS", "7.5"))
 # A floor as well as a cap. Every shot in this project asks for 10 s, so the cap
 # is what binds and the floor never fires -- but a script with a 1.5 s beat in
 # it would otherwise render 39 frames, and a clip under two seconds is not a
@@ -980,6 +1015,39 @@ def _camera_prefix(shot):
     if comp and len(comp) <= CAMERA_COMPOSITION_MAX:
         bits.append(comp)
     return "，".join(bits) + "。" if bits else ""
+
+
+# Every one of xuemang's 108 video_prompts ended with 9:16竖幅 while the film
+# renders 1088x608 landscape from 16:9 plates - the blueprint's visual_style
+# said 9:16 and the aspect rode along into the shot text. So each frame was
+# told "vertical" as it was drawn wide. Only a ratio followed by 竖/横 is
+# touched: 明暗比5:1 and 4:1 are lighting contrast, not aspect, and 11 shots
+# carry those in the same sentence.
+_ASPECT_RE = re.compile(r"(?:9\s*:\s*16|16\s*:\s*9)\s*(?:竖幅|横幅|竖|横)")
+
+
+def _fix_aspect(prompt, fmt):
+    """Make the prompt's stated aspect agree with the canvas being rendered."""
+    want = "16:9横幅" if (fmt or "16:9") == "16:9" else "9:16竖幅"
+    return _ASPECT_RE.sub(want, prompt)
+
+
+# h3 pins the first frame, so a later segment opens on a still and, given the
+# same prompt as the segment before it, redraws the scene instead of carrying
+# the action on. Measured over chapter 1: mean inter-frame motion 14.1 in
+# segment 1 and 3.6 / 5.5 / 6.1 in the three that follow, in 7 of 8 clips.
+# Naming the segment's place in the action is what gives it somewhere to go.
+# Phrased as what the picture does, never as what it should stop doing - a
+# negation puts the noun back in the frame (CLAUDE.md).
+SEGMENT_CONTINUITY = os.environ.get("BOOKREEL_SEGMENT_CONTINUITY", "1") not in ("0", "", "false")
+
+
+def _segment_prompt(prompt, i, nseg):
+    """The prompt for segment i of nseg, told where it sits in the action."""
+    if not SEGMENT_CONTINUITY or nseg <= 1 or i <= 0:
+        return prompt
+    where = "动作进行中，从首帧继续向前推进" if i < nseg - 1 else "动作收束，落到这一镜的最后一个姿态"
+    return "【承接】画面紧接首帧继续，同一个连贯动作，%s，人物与镜头保持运动。" % where + prompt
 
 
 def _instruct_for(d):
@@ -1344,6 +1412,8 @@ class VideoBatch:
         # video_prompt: the script on disk stays what the model wrote, and a
         # re-render picks up any change here without regenerating chapters.
         prompt = _camera_prefix(shot) + prompt
+        fmt = self.state.get("format") or "16:9"
+        prompt = _fix_aspect(prompt, fmt)
         lib = _read_json(os.path.join(PROJECTS, self.slug, "assets", "prompts.json"), {}) or {}
         base = os.path.join(PROJECTS, self.slug)
         work = os.path.join(base, "clips", "%02d" % n, "_frames")
@@ -1355,7 +1425,14 @@ class VideoBatch:
         #    s, so a 4 s clip was never going to carry its own line.
         voice, voice_secs = self._voice_track(work, key, shot)
         seg = self._grid_seconds(SEG_SECONDS)
-        target = max(VIDEO_MIN_SECONDS, VIDEO_SECONDS, voice_secs)
+        # Length comes from what the shot carries, capped - never a flat floor.
+        if voice_secs > 0:
+            target = min(VIDEO_MAX_SECONDS,
+                         max(VIDEO_MIN_SECONDS, voice_secs + VIDEO_HANDLE_SECONDS))
+        else:
+            wide = str((shot.get("camera") or {}).get("shot_size") or "").upper() in ("ELS", "LS")
+            target = max(VIDEO_MIN_SECONDS,
+                         VIDEO_SILENT_WIDE_SECONDS if wide else VIDEO_SILENT_SECONDS)
         nseg = 1
         while nseg * seg < target - 1e-6:
             nseg += 1
@@ -1390,6 +1467,7 @@ class VideoBatch:
         # 3. Render the segments, each one starting where the last one ended.
         parts, canvas, tail = [], "", None
         for i in range(nseg):
+            body["prompt"] = _segment_prompt(prompt, i, nseg)
             data, q = self._segment(key, body, ref, "%s 第 %d/%d 段" % (key, i + 1, nseg))
             part = os.path.join(work, "%s-seg%d.mp4" % (shot["id"], i))
             with open(part, "wb") as f:
@@ -1407,28 +1485,41 @@ class VideoBatch:
         joined = os.path.join(work, "%s-joined.mp4" % shot["id"])
         _concat_stream(parts, joined)
         final = os.path.join(work, "%s-final.mp4" % shot["id"])
+        # Every clip leaves here with exactly one audio stream, in one format,
+        # running exactly as long as its picture. Neither used to be true: the
+        # silent shots were written with -an and 50 of 103 clips carried no
+        # audio stream at all, while a voiced clip's track stopped with the
+        # line and left the picture running. Concatenating a chapter with
+        # -c copy across that either drops the sound from the first silent shot
+        # onward or lets every later clip's audio run ahead of its own image,
+        # which is what made the assembled chapter sound wrong rather than just
+        # sparse. apad + -shortest pads to the picture; anullsrc gives a silent
+        # shot a real track to be concatenated with.
+        AR, AC = ["-ar", "48000"], ["-ac", "2"]
         if voice and os.path.isfile(voice):
             if AMBIENT_GAIN > 0 and _has_audio(joined):
                 _ff(["-i", joined, "-i", voice, "-filter_complex",
                      "[0:a]volume=%.3f[amb];[amb][1:a]amix=inputs=2:duration=first:"
-                     "dropout_transition=0,dynaudnorm=p=0.9[a]" % AMBIENT_GAIN,
+                     "dropout_transition=0,dynaudnorm=p=0.9[m];[m]apad[a]" % AMBIENT_GAIN,
                      "-map", "0:v", "-map", "[a]", "-c:v", "copy", "-c:a", "aac",
-                     "-b:a", "160k", final])
+                     "-b:a", "160k"] + AR + AC + ["-shortest", final])
             else:
-                # Narration only: the video's own track, if it has one, is
-                # dropped rather than mixed. -shortest is deliberately absent -
-                # the picture is sized to outlast the line, not the other way
-                # round, and truncating the video to the narration would undo
-                # that.
-                _ff(["-i", joined, "-i", voice, "-map", "0:v", "-map", "1:a",
-                     "-c:v", "copy", "-c:a", "aac", "-b:a", "160k", final])
-        elif _has_audio(joined):
-            # Nothing said in this shot. h3's invented voice is worse than
-            # silence, so strip it and leave the picture mute for the sound
-            # pass; the script carries room_tone/ambience/foley per shot.
-            _ff(["-i", joined, "-map", "0:v", "-c:v", "copy", "-an", final])
+                # Narration only: h3's own track, if any, is dropped rather
+                # than mixed. The picture is sized to outlast the line, so the
+                # voice is padded out to it instead of the picture being cut
+                # back to the voice.
+                _ff(["-i", joined, "-i", voice, "-filter_complex", "[1:a]apad[a]",
+                     "-map", "0:v", "-map", "[a]", "-c:v", "copy", "-c:a", "aac",
+                     "-b:a", "160k"] + AR + AC + ["-shortest", final])
         else:
-            final = joined
+            # Nothing said in this shot. h3's invented voice is worse than
+            # silence, so it is replaced by real silence - not by no stream at
+            # all - and the script's room_tone/ambience/foley go over it in the
+            # sound pass.
+            _ff(["-i", joined, "-f", "lavfi", "-i",
+                 "anullsrc=channel_layout=stereo:sample_rate=48000",
+                 "-map", "0:v", "-map", "1:a", "-c:v", "copy", "-c:a", "aac",
+                 "-b:a", "160k"] + AR + AC + ["-shortest", final])
 
         with open(final, "rb") as f:
             data = f.read()
@@ -2136,10 +2227,14 @@ def library(slug):
                 # Step 3 needs both: the reference image this shot starts from,
                 # and the line to be spoken over it.
                 "first_frame_ref": sh.get("first_frame_ref", ""),
+                # The assembly sheet needs these to know which joins the script
+                # asked to dissolve rather than cut.
+                "transitions": sh.get("transitions") or {},
                 "narration": sh.get("narration", "") or "",
                 "dialog": [{"who": d.get("who", ""), "line": d.get("line", "")}
                            for d in (sh.get("dialog") or [])],
                 "exists": ok, "bytes": os.path.getsize(full) if ok else 0,
+                "clip_seconds": _clip_seconds(full) if ok else 0.0,
                 "url": ("/media/%s/%s?t=%d" % (slug, rel, int(os.path.getmtime(full)))) if ok else None,
                 "takes": _takes_for(slug, rel, full) if ok else [],
                 "take": _take_active(full) if ok else None,
