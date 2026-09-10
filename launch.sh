@@ -467,9 +467,21 @@ do_start() {
 # is only released when the last process holding it exits, so /interrupt is not
 # enough and the whole thing has to go. Uses the same start_comfy as a normal
 # launch, so the flags and env cannot drift.
-do_comfy_restart() {
+# Whoever is actually listening on comfy's port. The pid file is written by
+# spawn, but it goes stale the moment comfy is started any other way (or a
+# restart is interrupted between the rm and the spawn), and killing a stale
+# pid leaves the real process running and the port busy - after which
+# start_comfy sees "already up" and the wedge is never cleared.
+comfy_pid() {
   local pid
   pid="$(cat "$LOGS/comfy.pid" 2>/dev/null)"
+  if [ -n "${pid:-}" ] && kill -0 "$pid" 2>/dev/null; then printf '%s' "$pid"; return 0; fi
+  pgrep -f "main.py --port $COMFY_PORT" 2>/dev/null | head -1
+}
+
+do_comfy_restart() {
+  local pid
+  pid="$(comfy_pid)"
   if [ -n "${pid:-}" ] && kill -0 "$pid" 2>/dev/null; then
     kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null
     # A wedged process sits in uninterruptible sleep until the driver gives the

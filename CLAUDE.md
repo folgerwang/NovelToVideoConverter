@@ -149,6 +149,20 @@ console shows.
   `timeout 120` (it is only a warning and must never be what stops comfy
   coming back), and 15 minutes in `_comfy_recover` for it to answer again.
   Measured end to end: 3m59s.
+- **/interrupt can leave a zombie in `queue_running`.** Cancelling a job while
+  ComfyUI is loading a model stops the execution but not the queue entry: the
+  prompt still shows as running, every prompt behind it waits forever, and the
+  GPU sits at **0%** - the opposite of the wedge, where it sits at 100%. So
+  "queue_remaining > 0 with an idle GPU" is its own signature, and the only
+  way out is the same restart. `_comfy_recover` covers it: it re-checks
+  `_comfy_knows` after the interrupt and restarts when the prompt is still
+  there. Do not read a cancelled task's disappearance from h3 as proof that
+  ComfyUI let go of it.
+- **Resolve comfy's pid by port, not only by the pid file** (`comfy_pid` in
+  launch.sh). `logs/comfy.pid` goes stale whenever comfy is started any other
+  way, or a restart is interrupted between the `rm` and the `spawn`. Killing a
+  stale pid leaves the real process alive and the port busy, and `start_comfy`
+  then says "already up" and the wedge is never cleared.
 - **A failed shot is re-rendered, with a new seed.** One attempt per shot left
   a hole in the finished video. `VIDEO_RETRIES` is 2, and the retry passes a
   random seed — web_server sends none by default, which makes h3 sample from
