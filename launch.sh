@@ -74,6 +74,12 @@ H3_LORA="${H3_LORA-minimax_h3_fl2v_turbo_4step_v1.0_768p_comfyui_bf16.safetensor
 # Sampling steps for slot C. Empty = h3_server's own rule (4 with a turbo LoRA,
 # 20 without). A UNet with the turbo already fused in (no LoRA) wants 4 here.
 H3_STEPS="${H3_STEPS:-}"
+# Seconds one clip segment may take before slot C calls it wedged, kills
+# ComfyUI and re-renders with a fresh seed. A healthy segment on this box is
+# ~27 min. Empty = h3_server's own 90 minutes; 0 = never give up, which is what
+# it did before 2026-09-10, when a jammed SDMA ring held one shot for four
+# hours and the 113 behind it never started.
+H3_STALL="${H3_STALL:-}"
 # Canvas ceiling for slot C, in pixels. h3's own limit is 768*1344 = 1032192
 # and this now runs at it: 1312x736 for a 16:9 clip, 736x1312 for 9:16.
 # Lower it to trade resolution for wall clock; everything is upscaled before
@@ -275,8 +281,11 @@ start_comfy() {
   local py="$VENVS/comfy/bin/python"
   [ -x "$py" ] || { fail "venvs/comfy missing"; return 1; }
   [ -f "$COMFY/main.py" ] || { fail "ComfyUI not found at $COMFY"; return 1; }
-  if ! "$py" -c 'import torch,sys; sys.exit(0 if torch.cuda.is_available() else 1)' 2>/dev/null; then
-    warn "this venv's torch cannot see the GPU - images will fall back to CPU and crawl"
+  # timeout: right after a wedged ring is killed the driver holds new HIP
+  # inits in uninterruptible sleep for minutes, and this check is only a
+  # warning - it must never be what stops comfy from coming back.
+  if ! timeout 120 "$py" -c 'import torch,sys; sys.exit(0 if torch.cuda.is_available() else 1)' 2>/dev/null; then
+    warn "this venv's torch cannot see the GPU yet - starting anyway"
   fi
   local listen=()
   [ "$BIND_LAN" = "1" ] && listen=(--listen 0.0.0.0)
@@ -294,7 +303,7 @@ start_comfy() {
   ( cd "$COMFY" && spawn comfy env TORCH_BLAS_PREFER_HIPBLASLT=0 TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1 "$py" main.py --port "$COMFY_PORT" \
       --enable-cors-header "*" "${listen[@]}" $COMFY_EXTRA )
   # Slower than the rest: it imports torch and scans every custom node.
-  wait_port "$COMFY_PORT" 180 comfy || return 1
+  wait_port "$COMFY_PORT" 600 comfy || return 1
   say "comfy    :$COMFY_PORT"
 }
 
@@ -395,7 +404,9 @@ start_video() {
     --comfy-unet "$H3_UNET" --comfy-clip "$H3_CLIP" --comfy-vae "$H3_VAE" \
     --comfy-audio-vae "$H3_AUDIO_VAE" \
     --comfy-lora "$lora" --out "$HERE/output/video" ${H3_STEPS:+--steps "$H3_STEPS"} \
-    ${H3_MAX_PIXELS:+--max-pixels "$H3_MAX_PIXELS"}
+    ${H3_MAX_PIXELS:+--max-pixels "$H3_MAX_PIXELS"} \
+    ${H3_STALL:+--comfy-stall "$H3_STALL"} \
+    --comfy-restart "$HERE/launch.sh comfy-restart"
   wait_port "$VIDEO_PORT" 30 video || return 1
   say "video    :$VIDEO_PORT (comfy backend$([ -n "$lora" ] && printf ', turbo 4-step'))"
 }
@@ -451,6 +462,31 @@ do_start() {
   return $rc
 }
 
+# Kill ComfyUI on its own and bring it straight back. h3_server calls this
+# through --comfy-restart when a render has wedged: a GPU ring that has jammed
+# is only released when the last process holding it exits, so /interrupt is not
+# enough and the whole thing has to go. Uses the same start_comfy as a normal
+# launch, so the flags and env cannot drift.
+do_comfy_restart() {
+  local pid
+  pid="$(cat "$LOGS/comfy.pid" 2>/dev/null)"
+  if [ -n "${pid:-}" ] && kill -0 "$pid" 2>/dev/null; then
+    kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null
+    # A wedged process sits in uninterruptible sleep until the driver gives the
+    # ring back, so TERM can take a while to land. Then insist.
+    local i=0
+    while [ $i -lt 30 ] && kill -0 "$pid" 2>/dev/null; do sleep 1; i=$((i + 1)); done
+    kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null
+    sleep 3
+  fi
+  rm -f "$LOGS/comfy.pid"
+  # Wait for the port to actually free, or start_comfy will see it busy and
+  # decide there is nothing to do.
+  local j=0
+  while [ $j -lt 30 ] && busy "$COMFY_PORT"; do sleep 1; j=$((j + 1)); done
+  start_comfy
+}
+
 do_stop() {
   printf '\n  Bookreel - stopping\n\n'
   local name pid
@@ -495,6 +531,7 @@ case "${1:-start}" in
   stop)          do_stop ;;
   restart)       do_stop; do_start ;;
   status)        do_status ;;
+  comfy-restart) do_comfy_restart ;;
   logs)          shift; do_logs "${1:-}" ;;
-  *)             printf '  usage: %s [start|stop|restart|status|logs <name>]\n' "$0"; exit 2 ;;
+  *)             printf '  usage: %s [start|stop|restart|status|comfy-restart|logs <name>]\n' "$0"; exit 2 ;;
 esac

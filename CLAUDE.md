@@ -124,6 +124,46 @@ console shows.
   a `/media/...` URL must percent-encode the path (`h3_server._materialize_image`
   returned 400 "'ascii' codec can't encode" for every night plate).
 
+## Clips (services/h3_server.py, VideoBatch in web_server.py)
+
+- **No wait on a render is unbounded.** ComfyUI answering /history is not proof
+  it is doing anything: on 2026-09-10 a job wedged inside the text encoder and
+  sat at 100% GPU for 3h48m while the server stayed cheerful, and `_run_comfy`
+  polled it the whole time because it only gave up when ComfyUI went
+  *unreachable*. Every segment here is the same shape (90 frames, one canvas,
+  4 steps, ~27 min on this box), so wall clock is a fair health check:
+  `--comfy-stall` (90 min, `H3_STALL`) in h3_server, `VIDEO_STALL` (100 min) in
+  VideoBatch. The batch's own deadline is checked *before* the poll, not inside
+  the "not finished yet" branch — the old one sat inside it, so a dead video
+  service, whose poll raises, skipped the deadline forever.
+- **/interrupt cannot reach a wedged job.** ComfyUI tests the interrupt flag
+  between sampler steps; a text encoder stuck on a jammed SDMA ring never
+  reaches one, and the queue still showed the prompt as running an hour later.
+  Only killing the process frees the ring — the driver releases it when the
+  last reference goes away. That is `launch.sh comfy-restart`, which
+  h3_server runs itself via `--comfy-restart` (`_comfy_recover`).
+- **Killing ComfyUI mid-model-load jams the ring in turn**, for about four
+  minutes: `kworker/…+ttm` threads sit in D, and *every* new HIP init blocks
+  behind them. So the restart path has to be patient, not clever —
+  `wait_port comfy 600`, the `torch.cuda.is_available()` precheck wrapped in
+  `timeout 120` (it is only a warning and must never be what stops comfy
+  coming back), and 15 minutes in `_comfy_recover` for it to answer again.
+  Measured end to end: 3m59s.
+- **A failed shot is re-rendered, with a new seed.** One attempt per shot left
+  a hole in the finished video. `VIDEO_RETRIES` is 2, and the retry passes a
+  random seed — web_server sends none by default, which makes h3 sample from
+  seed 0, so a plain retry reproduces the same wedge frame for frame. A stop
+  is never retried.
+- **h3 keeps its tasks in memory**, so a 404 from `/v1/query/video_generation`
+  means it was restarted and that render is gone. Fail the segment then and
+  there; it used to fall into the generic `except: continue` and wait out the
+  full deadline for nothing.
+- The kernel says it first: `svm_range_restore_work [amdgpu] hogged CPU`
+  doubling (4, 5, 7, 11, 19, 35, 67, 131 times) and then
+  `Fence fallback timer expired on ring sdma0` in a steady stream. A storm
+  while models load is noise; one that keeps up for minutes with no segment
+  written is the wedge. `journalctl -k` is the only place this shows.
+
 ## This machine (launch.sh)
 
 - 128 GB Strix Halo, BIOS split 96 GiB VRAM / 31 GiB host. The host side is

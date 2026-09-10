@@ -1242,6 +1242,15 @@ def _crop_frame(src, dst, ratio):
          "-frames:v", "1", "-q:v", "2", dst], timeout=180)
 
 
+# How long one h3 segment may take before the batch calls it wedged, and how
+# many times a shot is re-rendered before it is given up on. h3_server has its
+# own 90-minute ceiling; this one sits just above it so its clearer message
+# wins the race. 2026-09-10: a GPU wedge inside the text encoder held one shot
+# for four hours and the other 113 never started.
+VIDEO_STALL = 100 * 60
+VIDEO_RETRIES = 2
+
+
 class VideoBatch:
     def __init__(self, slug):
         self.slug = slug
@@ -1338,9 +1347,21 @@ class VideoBatch:
                 self.state["current_started"] = int(time.time())
                 self._save()
             try:
-                self._render(key)
-                with self.lock:
-                    self.state["done"].append(key)
+                # A shot used to get exactly one attempt, so one wedged render
+                # left a hole in the finished video. Retry it - with a fresh
+                # seed, since the default 0 would reproduce the same wedge -
+                # and only then give up. A stop is never retried.
+                for attempt in range(VIDEO_RETRIES + 1):
+                    try:
+                        self._render(key, seed=None if attempt == 0 else random.randrange(1, 2**31))
+                        with self.lock:
+                            self.state["done"].append(key)
+                        break
+                    except Exception as exc:                # noqa: BLE001
+                        if self.stop_flag or attempt == VIDEO_RETRIES:
+                            raise
+                        self._log("↻ %s 第 %d 次重试（换种子）：%s"
+                                  % (key, attempt + 1, str(exc)[:120]))
             except Exception as exc:                        # noqa: BLE001
                 with self.lock:
                     self.state["failed"].append({"key": key, "error": str(exc)[:300], "t": int(time.time())})
@@ -1391,24 +1412,48 @@ class VideoBatch:
             time.sleep(10)
             if self.stop_flag:
                 raise RuntimeError("停止")
+            # The deadline is checked here, before the poll, and not inside the
+            # "not finished yet" branch: when the video service is unreachable
+            # the poll below raises and its `continue` used to skip the check
+            # altogether, so an h3 that never came back held the queue open for
+            # good. Cancel the task too, or it keeps the GPU while we retry.
+            if time.time() - t0 > VIDEO_STALL:
+                self._cancel(tid)
+                raise RuntimeError("%s 等了 %d 分钟没有结果"
+                                   % (label, VIDEO_STALL // 60))
             try:
                 with urllib.request.urlopen(
                         H3 + "/v1/query/video_generation?task_id=" + tid, timeout=60) as r:
                     q = json.load(r)
+            except urllib.error.HTTPError as exc:
+                # h3 keeps its tasks in memory, so a 404 means it was restarted
+                # and this render is gone. Waiting out the deadline for that is
+                # an hour and a half of nothing; re-render it now instead.
+                if exc.code == 404:
+                    raise RuntimeError("%s：视频服务重启过，任务已丢失" % label)
+                continue
             except Exception:                               # noqa: BLE001
                 continue
             st = q.get("status")
             if st == "Fail":
                 raise RuntimeError(str(q.get("error"))[:200])
             if st != "Success":
-                if time.time() - t0 > 6 * 3600:
-                    raise RuntimeError("%s 等了 6 小时没有结果" % label)
                 continue
             fid = q.get("file_id")
             if not fid:
                 raise RuntimeError("%s 完成但没有文件" % label)
             with urllib.request.urlopen(H3 + "/v1/files/" + fid, timeout=600) as r:
                 return r.read(), q
+
+    def _cancel(self, tid):
+        """Tell h3 to drop a task we have stopped waiting for."""
+        try:
+            req = urllib.request.Request(
+                H3 + "/v1/video/cancel", data=json.dumps({"task_id": tid}).encode(),
+                headers={"Content-Type": "application/json"})
+            urllib.request.urlopen(req, timeout=30).close()
+        except Exception:                                   # noqa: BLE001
+            pass
 
     def _voice_track(self, work, key, shot):
         """Synthesize everything heard in this shot into one wav.
@@ -1453,7 +1498,7 @@ class VideoBatch:
                     pass
         return out, _duration(out), cues
 
-    def _render(self, key):
+    def _render(self, key, seed=None):
         n, shot = self._shot(key)
         if not shot:
             raise RuntimeError("script 里没有 %s" % key)
@@ -1512,6 +1557,10 @@ class VideoBatch:
                 "duration": SEG_SECONDS,
                 "resolution": VIDEO_FORMATS.get(self.state.get("format"), VIDEO_RESOLUTION),
                 "prompt_optimizer": False}
+        # Left out, h3 samples from seed 0 every time, so re-rendering a shot
+        # reproduces it frame for frame - including whatever went wrong.
+        if seed is not None:
+            body["seed"] = int(seed)
 
         self._log("▶ %s %.2f 秒 = %d 段 x %.2f，旁白 %.1f 秒，首帧 %s"
                   % (key, nseg * seg, nseg, seg, voice_secs, note))

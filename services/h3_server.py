@@ -123,6 +123,13 @@ CFG = {
     "c_scheduler": "simple",
     "c_shift_v": 12.0,
     "c_shift_a": 3.0,
+    # Wall-clock ceiling on one render before it counts as wedged. A healthy
+    # segment on the Strix Halo box is ~27 min; 90 leaves room for a cold
+    # model load without letting a hang eat the night. 0 disables the check.
+    "c_stall": 90 * 60,
+    # Shell command that puts a wedged ComfyUI back on its feet. Empty = only
+    # try /interrupt and then give up on the render.
+    "c_restart": "",
 }
 
 _TASKS = {}                 # task_id -> dict
@@ -229,6 +236,63 @@ def _comfy_post(path, payload, timeout=60):
                                  {"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.load(r)
+
+
+def _comfy_knows(prompt_id):
+    """True while ComfyUI still has this prompt running or pending."""
+    try:
+        q = _comfy_get("/queue", timeout=20)
+    except Exception:                                  # noqa: BLE001
+        return True                                    # cannot tell; assume yes
+    for bucket in ("queue_running", "queue_pending"):
+        for item in (q.get(bucket) or []):
+            if isinstance(item, (list, tuple)) and len(item) > 1 and item[1] == prompt_id:
+                return True
+    return False
+
+
+def _comfy_abandon(prompt_id):
+    """Give a wedged prompt back: delete it if pending, interrupt if running."""
+    for path, payload in (("/queue", {"delete": [prompt_id]}), ("/interrupt", {})):
+        try:
+            _comfy_post(path, payload, timeout=20)
+        except Exception:                              # noqa: BLE001
+            pass                                       # empty body / already gone
+
+
+def _comfy_recover(prompt_id):
+    """Get ComfyUI back to a state where the next render can start.
+
+    A prompt that is only queued goes away when we delete it, and a normally
+    running one stops on /interrupt. Neither reaches a job whose GPU work has
+    wedged: ComfyUI tests the interrupt flag between sampler steps, and a text
+    encoder stuck on a jammed SDMA ring never reaches one. 2026-09-10 that cost
+    four hours, and killing the process was the only thing that worked - the
+    driver freed the ring as soon as the last reference to it went away. That
+    is what --comfy-restart is for.
+    """
+    _comfy_abandon(prompt_id)
+    for _ in range(15):                                # 30s to let go cleanly
+        time.sleep(2)
+        if not _comfy_knows(prompt_id):
+            return "interrupted"
+    cmd = CFG["c_restart"]
+    if not cmd:
+        return "still wedged, and no --comfy-restart to run"
+    print("[h3] ComfyUI will not drop %s - restarting it" % prompt_id, flush=True)
+    try:
+        subprocess.run(cmd, shell=True, timeout=900,
+                       stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    except Exception as exc:                           # noqa: BLE001
+        return "restart command failed: %s" % exc
+    # Freeing a jammed ring takes the driver minutes, and every HIP init in
+    # that window blocks, so this wait has to outlast the cleanup, not just
+    # ComfyUI's own ~40s start.
+    for _ in range(180):                               # up to 15 min to come back
+        if _comfy_alive():
+            return "ComfyUI restarted"
+        time.sleep(5)
+    return "restarted, but ComfyUI did not come back"
 
 
 def _comfy_alive():
@@ -355,11 +419,23 @@ def _run_comfy(task):
     _RUNNING["prompt_id"] = prompt_id
     print("[h3] %s -> comfy prompt %s" % (task_id, prompt_id), flush=True)
 
+    t0 = time.time()
+    stall = CFG["c_stall"]
     unreachable_since = None
+    gone_since = None
     while True:
         with _LOCK:
             if _TASKS.get(task_id, {}).get("cancelled"):
                 return False, "cancelled"
+        # Every render here is the same shape - 90 frames at one canvas, 4 steps
+        # - so wall clock is a fair health check. It has to be: the GPU wedged
+        # inside the text encoder once (2026-09-10) and ComfyUI stayed reachable
+        # and cheerfully "running" for four hours, which no unreachable-check
+        # can catch. Give up and let the caller retry with a fresh seed.
+        if stall and time.time() - t0 > stall:
+            how = _comfy_recover(prompt_id)
+            return False, ("ComfyUI stalled: nothing after %d min (limit %d) - %s"
+                           % ((time.time() - t0) / 60, stall / 60, how))
         time.sleep(2)
         try:
             hist = _comfy_get("/history/%s" % prompt_id, timeout=20)
@@ -377,7 +453,17 @@ def _run_comfy(task):
             continue
         entry = hist.get(prompt_id)
         if not entry:
+            # Not in history and not in the queue either means ComfyUI was
+            # restarted under us and the job died with it. The old code read
+            # that as "not finished yet" and polled until the heat death.
+            if _comfy_knows(prompt_id):
+                gone_since = None
+            elif gone_since is None:
+                gone_since = time.time()
+            elif time.time() - gone_since > 60:
+                return False, "ComfyUI lost the job - was it restarted?"
             continue
+        gone_since = None
         status = (entry.get("status") or {})
         if status.get("status_str") == "error" or (
                 status.get("completed") is False and status.get("status_str") != "success"):
@@ -702,6 +788,10 @@ def main():
     c.add_argument("--scheduler", default="simple")
     c.add_argument("--shift-video", type=float, default=12.0)
     c.add_argument("--shift-audio", type=float, default=3.0)
+    c.add_argument("--comfy-stall", type=int, default=CFG["c_stall"], metavar="SECONDS",
+                   help="give up on one render after this long (0 = never)")
+    c.add_argument("--comfy-restart", default="", metavar="CMD",
+                   help="shell command that restarts a wedged ComfyUI")
     args = ap.parse_args()
 
     lora = (args.comfy_lora or "").strip()
@@ -727,6 +817,8 @@ def main():
         c_dtype=args.weight_dtype, c_cfg=args.cfg,
         c_sampler=args.sampler, c_scheduler=args.scheduler,
         c_shift_v=args.shift_video, c_shift_a=args.shift_audio,
+        c_stall=max(0, args.comfy_stall),
+        c_restart=args.comfy_restart.strip(),
     )
     os.makedirs(CFG["out_dir"], exist_ok=True)
 
