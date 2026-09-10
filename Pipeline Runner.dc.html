@@ -87,7 +87,7 @@
             <h4 style="margin:0; font-size:18px; flex:1;">{{ ch.title }}</h4>
             <span class="tag tag-neutral">{{ ch.tally }}</span>
             <button class="btn btn-primary" disabled="{{ busy }}" style="{{ offStyle }}" onClick="{{ ch.runMissing }}">{{ ch.missingLabel }}</button>
-            <button class="btn btn-secondary" disabled="{{ busy }}" style="{{ offStyle }}" onClick="{{ ch.runNarration }}">旁白与合成脚本</button>
+            <button class="btn btn-secondary" disabled="{{ busy }}" style="{{ offStyle }}" onClick="{{ ch.runNarration }}">字幕与合成脚本</button>
           </div>
           <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(260px,1fr)); gap:12px; margin-top:14px;">
             <sc-for list="{{ ch.shots }}" as="s" hint-placeholder-count="4">
@@ -174,12 +174,6 @@ const at = p => (typeof location !== "undefined" && /^https?:$/.test(location.pr
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const pad = (n, w) => String(n).padStart(w, "0");
-
-function srtTime(t) {
-  const ms = Math.max(0, Math.round(t * 1000));
-  return pad(Math.floor(ms / 3600000), 2) + ":" + pad(Math.floor(ms / 60000) % 60, 2) + ":" +
-         pad(Math.floor(ms / 1000) % 60, 2) + "," + pad(ms % 1000, 3);
-}
 
 class Component extends DCLogic {
   state = {
@@ -439,72 +433,29 @@ class Component extends DCLogic {
     this.log("第 " + n + " 章结束：成功 " + ok + " / " + shots.length);
   }
 
-  // 旁白 + 对齐 + 一份可以照着敲的 ffmpeg 清单。
-  // 浏览器拼不了视频，所以这里不假装能合成，只把命令写清楚。
+  // 字幕 + 一份可以照着敲的 ffmpeg 清单。
+  // 以前这里会把旁白重新合成一遍再拿去对齐，可片子里装的是服务端渲染时合成的
+  // 那一条——同样的字，不同的一次合成，长短不一样，字幕于是整章对不上，而且
+  // 台词根本没有字幕。现在时间轴由服务端给：每段片子多长、每句话在自己那段
+  // 片子里的第几秒，都是渲染当时记下来的。浏览器不再合成任何东西。
   async runNarration(n, shots) {
     if (this.state.busy) { this.log("正在跑，等它结束", "warn"); return; }
-    // 字幕的时间轴由片段长度推进，不是由旁白长度推进：一章里有一半的镜头
-    // 一句话都没有，只走有旁白的镜头累加，从第二条字幕起就offset就短了。
-    const timeline = shots.filter(s => s.exists);
-    const voiced = timeline.filter(s => (s.narration || "").trim());
-    this.setState({ busy: "第 " + n + " 章", op: "旁白", done: 0, total: voiced.length || 1, startedAt: Date.now() });
-    const cues = [];
-    let offset = 0, alignOk = true, ttsDown = false, made = 0, seen = 0;
+    const live = shots.filter(s => s.exists);
+    if (!live.length) { this.log("这一章还没有片段", "warn"); return; }
+    this.setState({ busy: "第 " + n + " 章", op: "字幕", done: 0, total: 1, startedAt: Date.now() });
 
-    for (let ti = 0; ti < timeline.length; ti++) {
-      const s = timeline[ti];
-      const clipLen = Number(s.clip_seconds) || 0;
-      if (!(s.narration || "").trim()) { offset += clipLen; continue; }
-      const i = seen++;
-      this.setState({ done: i, busy: s.id });
-      let wav = null;
-      try {
-        const r = await fetch(this.state.ep.tts + "/tts", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text: s.narration, voice: "storyteller", speed: 0.95, format: "wav" })
-        });
-        if (!r.ok) { this.log("! 旁白 HTTP " + r.status + " · " + s.id, "warn"); alignOk = false; offset += clipLen; continue; }
-        wav = await r.blob();
-      } catch (e) {
-        if (!ttsDown) { this.log("旁白服务未连接，跳过全部旁白", "error"); ttsDown = true; }
-        alignOk = false;
-        offset += clipLen;
-        continue;
-      }
-      if (!wav.size || (wav.type || "").indexOf("json") >= 0) {
-        this.log("! 旁白服务返回错误 · " + s.id, "warn"); alignOk = false; offset += clipLen; continue;
-      }
-      made++;
-      // 合成出来的音频没有服务端够得着的地址，所以直接把字节传上去。
-      const sv = await fetch("/api/upload?slug=" + encodeURIComponent(this.state.slug) +
-        "&path=" + encodeURIComponent("clips/" + pad(n, 2) + "/" + s.id + ".wav"), {
-        method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: wav
-      }).then(r => r.json()).catch(() => ({ ok: false }));
-      if (!sv.ok) this.log("旁白未能落盘（" + s.id + "）：" + (sv.error || "未知"), "warn");
-
-      try {
-        const fd = new FormData();
-        fd.append("audio", wav, s.id + ".wav");
-        fd.append("text", s.narration);
-        const al = await (await fetch(this.state.ep.asr + "/align", { method: "POST", body: fd })).json();
-        for (const sen of (al.sentences || [])) {
-          cues.push({ start: offset + (sen.start || 0), end: offset + (sen.end || 0), text: sen.text });
-        }
-      } catch (e) { alignOk = false; }
-      // 旁白在片段里是从 0 秒起混进去的，所以这一镜的字幕就落在片段起点上，
-      // 时钟按片段长度往前走。拿不到长度时退回旁白长度，至少不倒退。
-      offset += clipLen || 0;
-      if (!clipLen) alignOk = false;
+    let srt = "", info = null;
+    try {
+      const r = await fetch("/api/srt?slug=" + encodeURIComponent(this.state.slug) + "&n=" + n);
+      const j = await r.json();
+      if (j && j.ok) { srt = j.srt || ""; info = j; }
+      else this.log("字幕未出：" + ((j && j.error) || ("HTTP " + r.status)), "warn");
+    } catch (e) { this.log("字幕未出：取不到 /api/srt", "error"); }
+    if (info && info.stale) {
+      this.log("有 " + info.stale + " 个片段是记录时间轴之前出的，这些镜头没有字幕，重出即可补上", "warn");
     }
 
-    const srt = (alignOk && cues.length)
-      ? cues.map((c, i) => (i + 1) + "\n" + srtTime(c.start) + " --> " + srtTime(c.end) + "\n" + c.text + "\n").join("\n")
-      : "";
-    if (cues.length && !alignOk) this.log("有片段未对齐，时间轴会错位，不出字幕", "warn");
-
-    const dir = "projects/" + this.state.slug + "/clips/" + pad(n, 2);
     const P = pad(n, 2);
-    const live = shots.filter(s => s.exists);
     // 片段自己已经带好旁白与台词，而且音轨补齐到和画面一样长，所以拼接就是拼接：
     // 旧的做法是把旁白单独拼成一条轨再 -map 1:a 盖上去，那条轨是按台词首尾相接
     // 排的，画面却是一镜一镜的，从第二镜起就对不上；再加上 -shortest，整章还会
@@ -515,6 +466,7 @@ class Component extends DCLogic {
       const w = String(t.out || "") + String((live[i + 1].transitions || {}).in || "");
       if (/淡|叠|化|fade|dissolve/i.test(w)) soft.push([live[i].id, live[i + 1].id]);
     }
+    const dir = "projects/" + this.state.slug + "/clips/" + P;
     const lines = [];
     lines.push("# 片段都在 " + dir + "/，每段自带旁白与台词，音轨已补到与画面等长。");
     lines.push("# 1) 拼接（顺序即分镜顺序）");
@@ -529,21 +481,22 @@ class Component extends DCLogic {
       soft.forEach(([a, b]) => {
         lines.push("#    " + a + " -> " + b);
         lines.push("#      ffmpeg -i " + a + ".mp4 -i " + b + ".mp4 -filter_complex \\");
-        lines.push("#        \"[0][1]xfade=transition=fade:duration=0.5:offset=$(echo \\$(ffprobe -v0 -show_entries format=duration -of csv=p=0 " + a + ".mp4) - 0.5 | bc)[v]; \\");
+        lines.push("#        \"[0][1]xfade=transition=fade:duration=0.5:offset=OFFSET[v]; \\");
         lines.push("#         [0:a][1:a]acrossfade=d=0.5[a]\" -map \"[v]\" -map \"[a]\" " + a + "-" + b + "-xf.mp4");
+        lines.push("#      OFFSET = " + a + " 的时长减 0.5");
       });
     }
     if (srt) {
       lines.push("");
       lines.push("# 3) 烧字幕（会重编码视频，放最后）");
-      lines.push("ffmpeg -i chapter-" + pad(n, 2) + ".mp4 -vf \"subtitles=chapter-" + pad(n, 2) + ".srt\" -c:a copy chapter-" + pad(n, 2) + "-sub.mp4");
+      lines.push("ffmpeg -i chapter-" + P + ".mp4 -vf \"subtitles=chapter-" + P + ".srt\" -c:a copy chapter-" + P + "-sub.mp4");
       lines.push("");
-      lines.push("# ---- chapter-" + pad(n, 2) + ".srt ----");
+      lines.push("# ---- chapter-" + P + ".srt ----");
       lines.push(srt);
     }
     this.setState(s => ({ sheets: Object.assign({}, s.sheets, { [n]: lines.join("\n") }) }));
     this.setState({ busy: "", op: "", done: 0, total: 0 });
-    this.log("第 " + n + " 章旁白结束：生成 " + made + " 段，字幕 " + (srt ? "已出" : "未出"));
+    this.log("第 " + n + " 章字幕：" + (info ? (info.cues + " 条，覆盖 " + info.seconds + " 秒") : "未出"));
   }
 
   renderVals() {

@@ -1086,6 +1086,50 @@ def _instruct_for(d):
     return out[:180]
 
 
+# Chinese subtitles stop being readable past about this many characters on a
+# line; asr_server splits on the same number for the same reason.
+SUB_MAX_CHARS = int(os.environ.get("BOOKREEL_SUB_MAX_CHARS", "18"))
+_CUE_SPLIT = re.compile(r"(?<=[。！？!?；;，、,：:])")
+
+
+def _split_cue(text, start, end):
+    """One spoken line as one or more readable cues.
+
+    Split points come from the line's own punctuation and the time is shared
+    out by character count. Mandarin TTS is even enough in pace that this lands
+    within a fraction of a second, and unlike asking the aligner it cannot fail
+    in the middle of a ninety-minute render.
+    """
+    text = (text or "").strip()
+    if not text:
+        return []
+    if len(text) <= SUB_MAX_CHARS:
+        return [{"start": start, "end": end, "text": text}]
+    parts, buf = [], ""
+    for piece in _CUE_SPLIT.split(text):
+        if not piece:
+            continue
+        if buf and len(buf) + len(piece) > SUB_MAX_CHARS:
+            parts.append(buf)
+            buf = piece
+        else:
+            buf += piece
+    if buf:
+        parts.append(buf)
+    if len(parts) <= 1:
+        return [{"start": start, "end": end, "text": text}]
+    total = float(sum(len(p) for p in parts)) or 1.0
+    out, t = [], start
+    span = end - start
+    for p in parts:
+        d = span * (len(p) / total)
+        out.append({"start": round(t, 3), "end": round(t + d, 3), "text": p.strip()})
+        t += d
+    if out:
+        out[-1]["end"] = end
+    return out
+
+
 def _speech_lines(shot):
     """Everything heard in this shot, in order: the narrator, then the dialog.
 
@@ -1377,18 +1421,26 @@ class VideoBatch:
         """
         lines = _speech_lines(shot)
         if not lines:
-            return None, 0.0
-        parts = []
+            return None, 0.0, []
+        parts, cues, t = [], [], 0.0
         for i, (voice, text, instruct) in enumerate(lines):
             wav = os.path.join(work, "%s-voice-%d.wav" % (shot["id"], i))
             try:
                 data = _synth(text, voice, instruct)
             except Exception as exc:                        # noqa: BLE001
                 self._log("！%s 旁白/台词未出（%s）：%s" % (key, voice, str(exc)[:90]))
-                return None, 0.0
+                return None, 0.0, []
             with open(wav, "wb") as f:
                 f.write(data)
             parts.append(wav)
+            # Cues are measured off the wav that actually goes into the clip.
+            # The page used to synthesize its own copy of the narration and
+            # align that instead, so the subtitles described a different take
+            # of the same line - close enough to look right and wrong enough
+            # to drift, and dialog got no subtitle at all.
+            d = _duration(wav)
+            cues.extend(_split_cue(text, round(t, 3), round(t + d, 3)))
+            t += d
         out = os.path.join(work, "%s-voice.wav" % shot["id"])
         if len(parts) == 1:
             os.replace(parts[0], out)
@@ -1399,7 +1451,7 @@ class VideoBatch:
                     os.unlink(q)
                 except OSError:
                     pass
-        return out, _duration(out)
+        return out, _duration(out), cues
 
     def _render(self, key):
         n, shot = self._shot(key)
@@ -1423,7 +1475,7 @@ class VideoBatch:
         # 1. What has to be heard decides how long the picture must be. The
         #    script asks for 10 s a shot and the narration for these runs 10-13
         #    s, so a 4 s clip was never going to carry its own line.
-        voice, voice_secs = self._voice_track(work, key, shot)
+        voice, voice_secs, cues = self._voice_track(work, key, shot)
         seg = self._grid_seconds(SEG_SECONDS)
         # Length comes from what the shot carries, capped - never a flat floor.
         if voice_secs > 0:
@@ -1530,7 +1582,7 @@ class VideoBatch:
         take = _take_add(full, data, {
             "seconds": round(secs, 2), "resolution": canvas or body["resolution"],
             "segments": nseg, "voice_seconds": round(voice_secs, 2),
-            "first_frame": note, "elapsed": int(time.time() - t0)})
+            "first_frame": note, "elapsed": int(time.time() - t0), "cues": cues})
         self._log("✓ %s 第 %d 次，%.1f 秒，%d 段，%d 分，%.1f MB%s"
                   % (key, take, secs, nseg, (time.time() - t0) / 60.0, len(data) / 1e6,
                      "，有中文旁白" if voice else "，无台词"))
@@ -1563,6 +1615,62 @@ def _all_shot_keys(slug, redo=False):
             if redo or not os.path.isfile(os.path.join(base, "clips", "%02d" % n, sid + ".mp4")):
                 out.append("%d:%s" % (n, sid))
     return out
+
+
+def _srt_time(t):
+    t = max(0.0, float(t))
+    h, r = divmod(t, 3600)
+    m, sec = divmod(r, 60)
+    return "%02d:%02d:%02d,%03d" % (int(h), int(m), int(sec), round((sec - int(sec)) * 1000))
+
+
+def chapter_srt(slug, n):
+    """The chapter's subtitles, built from the clips that actually exist.
+
+    Timing comes from two things on disk and nothing else: how long each clip
+    runs, and where each line sits inside the voice track that was muxed into
+    it. Both are recorded when the clip is rendered, so the subtitles describe
+    the audio in the film rather than a second synthesis of the same words.
+    Shots with no clip yet are skipped and do not advance the clock - they are
+    not in the concatenated chapter either.
+    """
+    base = os.path.join(PROJECTS, slug)
+    sc = _read_json(os.path.join(base, "script", "%02d.json" % int(n)), {}) or {}
+    out, idx, offset, missing = [], 1, 0.0, 0
+    for sh in sc.get("shots", []):
+        sid = sh.get("id")
+        if not sid:
+            continue
+        full = os.path.join(base, "clips", "%02d" % int(n), sid + ".mp4")
+        if not os.path.isfile(full):
+            continue
+        d, _ext = _take_dir(full)
+        take = _take_active(full)
+        meta = _read_json(os.path.join(d, "%d.json" % take), {}) if take else {}
+        meta = meta or {}
+        clip = 0.0
+        try:
+            clip = float(meta.get("seconds") or 0.0)
+        except (TypeError, ValueError):
+            clip = 0.0
+        if not clip:
+            clip = _duration(full)
+        cues = meta.get("cues")
+        if cues is None:
+            missing += 1
+            cues = []
+        for c in cues:
+            try:
+                st, en = float(c["start"]) + offset, float(c["end"]) + offset
+            except (KeyError, TypeError, ValueError):
+                continue
+            text = (c.get("text") or "").strip()
+            if not text or en <= st:
+                continue
+            out.append("%d\n%s --> %s\n%s\n" % (idx, _srt_time(st), _srt_time(en), text))
+            idx += 1
+        offset += clip
+    return "\n".join(out), {"cues": idx - 1, "seconds": round(offset, 2), "stale": missing}
 
 
 def video_plan(slug):
@@ -1868,6 +1976,18 @@ class Handler(SimpleHTTPRequestHandler):
             q = parse_qs(urlparse(self.path).query)
             slug = _safe_slug(q.get("slug", [""])[0])
             return self._json(video_batch_for(slug).snapshot() if slug else {"status": "idle"})
+        if path == "/api/srt":
+            q = parse_qs(urlparse(self.path).query)
+            slug = _safe_slug(q.get("slug", [""])[0])
+            try:
+                n = int(q.get("n", ["0"])[0])
+            except ValueError:
+                n = 0
+            if not slug or not n:
+                return self._json({"ok": False, "error": "需要 slug 与 n"}, code=400)
+            body, info = chapter_srt(slug, n)
+            return self._json({"ok": True, "srt": body, "srt_name": "chapter-%02d.srt" % n,
+                               **info})
         if path == "/api/video/plan":
             q = parse_qs(urlparse(self.path).query)
             slug = _safe_slug(q.get("slug", [""])[0])
