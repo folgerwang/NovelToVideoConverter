@@ -1597,11 +1597,18 @@ class VideoBatch:
         # sparse. apad + -shortest pads to the picture; anullsrc gives a silent
         # shot a real track to be concatenated with.
         AR, AC = ["-ar", "48000"], ["-ac", "2"]
+        # apad on its own pads forever, and -shortest does not stop it when the
+        # video is `-c:v copy`: ffmpeg spun at a fixed file size until _ff's
+        # 15-minute timeout, and the shot - four segments, ~two hours of GPU -
+        # was thrown away with a truncated "moov atom not found" final. Give
+        # apad the picture's own length and it ends by itself (0.15s, measured).
+        vdur = _duration(joined)
+        pad = "apad=whole_dur=%.3f" % vdur if vdur > 0 else "apad"
         if voice and os.path.isfile(voice):
             if AMBIENT_GAIN > 0 and _has_audio(joined):
                 _ff(["-i", joined, "-i", voice, "-filter_complex",
                      "[0:a]volume=%.3f[amb];[amb][1:a]amix=inputs=2:duration=first:"
-                     "dropout_transition=0,dynaudnorm=p=0.9[m];[m]apad[a]" % AMBIENT_GAIN,
+                     "dropout_transition=0,dynaudnorm=p=0.9[m];[m]%s[a]" % (AMBIENT_GAIN, pad),
                      "-map", "0:v", "-map", "[a]", "-c:v", "copy", "-c:a", "aac",
                      "-b:a", "160k"] + AR + AC + ["-shortest", final])
             else:
@@ -1609,7 +1616,7 @@ class VideoBatch:
                 # than mixed. The picture is sized to outlast the line, so the
                 # voice is padded out to it instead of the picture being cut
                 # back to the voice.
-                _ff(["-i", joined, "-i", voice, "-filter_complex", "[1:a]apad[a]",
+                _ff(["-i", joined, "-i", voice, "-filter_complex", "[1:a]%s[a]" % pad,
                      "-map", "0:v", "-map", "[a]", "-c:v", "copy", "-c:a", "aac",
                      "-b:a", "160k"] + AR + AC + ["-shortest", final])
         else:

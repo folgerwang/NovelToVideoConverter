@@ -154,6 +154,17 @@ console shows.
   random seed — web_server sends none by default, which makes h3 sample from
   seed 0, so a plain retry reproduces the same wedge frame for frame. A stop
   is never retried.
+- **`apad` must be given a length.** The final mux pads the narration out to
+  the picture; bare `apad` pads *forever*, and `-shortest` does not stop it
+  when the video is `-c:v copy`, so ffmpeg sat at a fixed file size until
+  `_ff`'s 15-minute timeout and the shot - four segments, ~two hours of GPU -
+  was thrown away with a truncated "moov atom not found" final. The clip
+  never published, and the leftover `-seg*.mp4` in `_frames` are the tell that
+  `_render` never reached its cleanup. Pass the picture's own duration
+  (`apad=whole_dur=<_duration(joined)>`) and it ends by itself: 0.15 s
+  measured, against a 15-minute hang. The silent branch is fine as it is -
+  `anullsrc` is an input, not a filter output, so `-shortest` does end it.
+
 - **h3 keeps its tasks in memory**, so a 404 from `/v1/query/video_generation`
   means it was restarted and that render is gone. Fail the segment then and
   there; it used to fall into the generic `except: continue` and wait out the
