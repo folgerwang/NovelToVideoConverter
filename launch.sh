@@ -74,16 +74,21 @@ H3_LORA="${H3_LORA-minimax_h3_fl2v_turbo_4step_v1.0_768p_comfyui_bf16.safetensor
 # Sampling steps for slot C. Empty = h3_server's own rule (4 with a turbo LoRA,
 # 20 without). A UNet with the turbo already fused in (no LoRA) wants 4 here.
 H3_STEPS="${H3_STEPS:-}"
-# Canvas ceiling for slot C, in pixels. h3's own limit is 768*1344 = 1032192,
-# which on this GPU costs ~11 minutes for a 3-second clip. Lower it to trade
-# resolution for wall clock; everything is upscaled before the final cut.
-# 1088x608 (661504 px), not h3_server's own 1032192 ceiling. Cost is frames x
-# pixels, so the budget is really a choice between width and length, and length
-# wins: measured 2026-09-08, 107 frames at 1088x608 took 16:35 while 73 frames
-# at 1312x736 took 17:52 - nearly double the motion for less time. Raise it back
-# to 1032192 for sharper, shorter clips; everything gets upscaled later anyway,
-# and an upscaler can invent pixels but not frames.
-H3_MAX_PIXELS="${H3_MAX_PIXELS:-661504}"
+# Canvas ceiling for slot C, in pixels. h3's own limit is 768*1344 = 1032192
+# and this now runs at it: 1312x736 for a 16:9 clip, 736x1312 for 9:16.
+# Lower it to trade resolution for wall clock; everything is upscaled before
+# the final cut, but an upscaler can invent pixels, not detail.
+#
+# Cost is frames x pixels, so this budget is really a choice between width and
+# length. Measured 2026-09-08, same shot and first frame, one clip each:
+#     56 frames 2.33s 1312x736  13:00 total,  8:06 sampling  -> 5.6 GPU-min/film-s
+#     73 frames 3.04s 1312x736  17:52 total, 11:33 sampling  -> 5.9
+#    107 frames 4.46s 1088x608  16:35 total, 10:44 sampling  -> 3.7
+# At 661504 (1088x608) a 15 s shot cost ~3.7 GPU-min per second of film, about
+# 56 min a shot; at the full budget it is ~5.9, about 88 min. That is the price
+# of the sharper frame - set H3_MAX_PIXELS=661504 to go back to the faster,
+# longer-per-hour setting without editing this file.
+H3_MAX_PIXELS="${H3_MAX_PIXELS:-1032192}"
 
 # BIND_LAN=0  everything listens on 127.0.0.1 - this machine only.
 # BIND_LAN=1  the console AND the model services bind 0.0.0.0, so you can

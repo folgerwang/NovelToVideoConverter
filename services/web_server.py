@@ -736,8 +736,9 @@ H3 = "http://127.0.0.1:9000"
 #    107 frames 4.46s 1088x608  16:35 total, 10:44 sampling  -> 3.7
 # Cost is frames x pixels and roughly linear in frames (1.38x for 1.30x), so
 # 15 s costs 15 s of GPU however it is sliced: about 3.7 GPU-minutes per second
-# of finished film at 1088x608, i.e. ~56 min a shot. Canvas comes from
-# H3_MAX_PIXELS in launch.sh, not from this constant.
+# of finished film at 1088x608 (~56 min a shot) and ~5.9 at 1312x736 (~88 min),
+# which is what it runs at now. Canvas comes from H3_MAX_PIXELS in launch.sh,
+# not from this constant.
 VIDEO_SECONDS = float(os.environ.get("BOOKREEL_CLIP_SECONDS", "15.0"))
 # A floor as well as a cap. Every shot in this project asks for 10 s, so the cap
 # is what binds and the floor never fires -- but a script with a 1.5 s beat in
