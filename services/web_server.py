@@ -825,6 +825,28 @@ TTS = "http://127.0.0.1:9100"
 # this buys the clean arithmetic for free.
 SEG_SECONDS = float(os.environ.get("BOOKREEL_SEG_SECONDS", "3.75"))
 VOICE = os.environ.get("BOOKREEL_VOICE", "storyteller")
+# Acting direction for the narrator and for dialog. tts_server has taken an
+# `instruct` since it was written (inference_instruct2), and the script has
+# written per-line delivery all along, so wiring the two together is the
+# obvious fix for narration that comes out level and unstressed.
+#
+# It is OFF by default because this CosyVoice checkout SPEAKS the instruction
+# instead of obeying it. Measured 2026-09-10 on 崇祯六年，秋…（36 chars):
+# zero-shot 11.20 s, with a 30-char instruct 23.02 s - the extra 11.8 s is
+# almost exactly how long that instruct takes to say. A 14-char dialog line
+# went 4.32 s -> 11.78 s and silencedetect shows 8.8 s of unbroken speech
+# where the plain read has a natural pause at the comma. Shortening the
+# direction to 7 characters still gave 7.56 s in four chunks, so it is not a
+# length problem.
+#
+# The code stays because the wiring is right and the leak is the engine's; set
+# these once instruct2 obeys (a newer CosyVoice2, or a build that takes the
+# instruct as a separate conditioning input rather than as text to read).
+# Until then the real lever on "too plain" is the reference clip itself:
+# zero-shot copies the prosody of voices/<name>.wav, and the one that ships is
+# CosyVoice's flat demo read.
+NARRATION_INSTRUCT = os.environ.get("BOOKREEL_NARRATION_INSTRUCT", "")
+DIALOG_INSTRUCT = os.environ.get("BOOKREEL_DIALOG_INSTRUCT", "0") not in ("0", "", "false")
 # h3 invents its own audio from the picture, and what it invents is not room
 # tone - it is a second person talking, in no language, and each segment
 # invents a fresh one, so a four-segment shot had a man muttering four times
@@ -890,6 +912,112 @@ def _concat_stream(parts, out):
             pass
 
 
+# The script's shot_size codes mean nothing to a video model - the same lesson
+# as 油灯 and 木格窗 in CLAUDE.md: name the thing in plain words. "ELS" got no
+# framing at all, which is how 79 of 108 shots went out with no camera
+# instruction and every cut came back looking like the last one.
+_SIZE_WORDS = {"ELS": "大远景", "LS": "远景", "MLS": "中远景", "MS": "中景",
+               "MCU": "近景", "CU": "特写", "ECU": "大特写", "BCU": "大特写"}
+_HEIGHT_WORDS = {"齐眼": "机位齐眼高", "腰高": "机位腰高", "地面": "机位贴地",
+                 "过顶": "机位过顶俯拍", "膝高": "机位膝高"}
+# Stated as what the camera does, never as what it does not - a negation puts
+# the noun in the picture (CLAUDE.md), and "不移动" is still 移动 to the model.
+_MOVE_WORDS = {"固定": "固定机位", "推": "镜头推近", "拉": "镜头拉远",
+               "俯仰": "镜头俯仰", "升降": "镜头升降", "手持": "手持镜头轻微晃动",
+               "横移": "镜头横移", "摇": "镜头横摇", "斯坦尼康": "斯坦尼康稳定器跟拍"}
+_DOF_WORDS = {"浅": "浅景深，背景虚化", "中": "中等景深", "深": "深焦，前后景都清晰"}
+_SPEED_WORDS = {"慢": "缓慢", "极慢": "极缓慢", "中": "中速", "快": "快速"}
+# Composition is the field that most directly stops two shots in one room from
+# framing up the same way, but it is free prose; past this length it starts
+# arguing with the scene description instead of placing the camera.
+CAMERA_COMPOSITION_MAX = int(os.environ.get("BOOKREEL_CAMERA_COMPOSITION_MAX", "60"))
+CAMERA_IN_PROMPT = os.environ.get("BOOKREEL_CAMERA_IN_PROMPT", "1") not in ("0", "", "false")
+
+
+def _plain(v):
+    """Drop an ASCII gloss like "(lock-off)" or "(OTS)", keep a Chinese one."""
+    v = str(v or "").strip()
+    v = re.sub(r"[(（]\s*[\x00-\x7f]+\s*[)）]", "", v)
+    return v.strip().strip("，。").strip()
+
+
+def _camera_prefix(shot):
+    """The shot's own camera block, in words a video model acts on.
+
+    The LLM writes shot_size / angle / height / movement / dof / composition
+    per shot and none of it used to reach h3 - the prompt was the scene
+    description alone, so the model chose its own framing every time and chose
+    something similar every time. This goes at the FRONT: opening tokens set
+    the picture, and framing is the first thing about a picture.
+    """
+    if not CAMERA_IN_PROMPT:
+        return ""
+    cam = shot.get("camera") or {}
+    if not isinstance(cam, dict):
+        return ""
+    bits = []
+    size = _SIZE_WORDS.get(str(cam.get("shot_size") or "").strip().upper())
+    if size:
+        bits.append(size)
+    angle = _plain(cam.get("angle"))
+    if angle:
+        bits.append(angle)
+    height = _HEIGHT_WORDS.get(_plain(cam.get("height")))
+    if height:
+        bits.append(height)
+    mv = _plain(cam.get("movement"))
+    move = _MOVE_WORDS.get(mv)
+    if move:
+        if mv != "固定":
+            sp = _SPEED_WORDS.get(_plain(cam.get("movement_speed")))
+            if sp:
+                move = sp + move
+        bits.append(move)
+    dof = _DOF_WORDS.get(_plain(cam.get("dof")))
+    if dof:
+        bits.append(dof)
+    comp = _plain(cam.get("composition"))
+    if comp and len(comp) <= CAMERA_COMPOSITION_MAX:
+        bits.append(comp)
+    return "，".join(bits) + "。" if bits else ""
+
+
+def _instruct_for(d):
+    """A CosyVoice2 instruct line from one dialog entry's delivery block.
+
+    The script writes eight fields per line -- emotion, pace, volume, pitch,
+    timbre, emphasis, pause, breath -- and every one of xuemang's 40 lines has
+    all eight. instruct2 wants a short spoken direction, not a spec sheet, so
+    this takes the four that change how a line sounds most and the emphasis,
+    and leaves pause/breath to the text's own punctuation. Handing it all eight
+    made the direction longer than the line being said.
+    """
+    if not DIALOG_INSTRUCT or not isinstance(d, dict):
+        return ""
+    dl = d.get("delivery") or {}
+    if not isinstance(dl, dict):
+        return ""
+    bits = []
+    emo = str(dl.get("emotion") or "").strip()
+    if emo:
+        bits.append("用%s的语气" % emo.rstrip("。，"))
+    for label, field in (("语速", "pace"), ("音量", "volume"), ("音色", "timbre")):
+        v = str(dl.get(field) or "").strip().rstrip("。，")
+        if v and v != "无":
+            bits.append("%s%s" % (label, v))
+    if not bits:
+        return ""
+    out = "，".join(bits) + "说"
+    emph = str(dl.get("emphasis") or "").strip()
+    if emph and emph != "无":
+        # The script writes emphasis as "word（why）"; the model only needs the
+        # word, and the parenthetical is longer than the line as often as not.
+        word = re.split(r"[（(]", emph, 1)[0].strip().rstrip("。，")
+        if word:
+            out += "，重读“%s”" % word
+    return out[:180]
+
+
 def _speech_lines(shot):
     """Everything heard in this shot, in order: the narrator, then the dialog.
 
@@ -901,22 +1029,26 @@ def _speech_lines(shot):
     out = []
     nar = (shot.get("narration") or "").strip()
     if nar:
-        out.append((VOICE, nar))
+        out.append((VOICE, nar, NARRATION_INSTRUCT))
     for d in shot.get("dialog") or []:
         line = (d.get("line") or "").strip()
         if not line:
             continue
         who = (d.get("who") or "").strip()
         have = who and os.path.isfile(os.path.join(ROOT, "voices", who + ".wav"))
-        out.append((who if have else VOICE, line))
+        out.append((who if have else VOICE, line, _instruct_for(d)))
     return out
 
 
-def _synth(text, voice, timeout=1800):
+def _synth(text, voice, instruct="", timeout=1800):
+    body = {"text": text, "voice": voice, "speed": 0.95, "format": "wav"}
+    # instruct2 replaces the reference transcript with the direction, so send
+    # the key only when there is one to send; an empty string would select the
+    # instruct path with nothing in it.
+    if instruct:
+        body["instruct"] = instruct
     req = urllib.request.Request(
-        TTS + "/tts",
-        data=json.dumps({"text": text, "voice": voice, "speed": 0.95,
-                         "format": "wav"}).encode("utf-8"),
+        TTS + "/tts", data=json.dumps(body).encode("utf-8"),
         headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return r.read()
@@ -1179,10 +1311,10 @@ class VideoBatch:
         if not lines:
             return None, 0.0
         parts = []
-        for i, (voice, text) in enumerate(lines):
+        for i, (voice, text, instruct) in enumerate(lines):
             wav = os.path.join(work, "%s-voice-%d.wav" % (shot["id"], i))
             try:
-                data = _synth(text, voice)
+                data = _synth(text, voice, instruct)
             except Exception as exc:                        # noqa: BLE001
                 self._log("！%s 旁白/台词未出（%s）：%s" % (key, voice, str(exc)[:90]))
                 return None, 0.0
@@ -1208,6 +1340,10 @@ class VideoBatch:
         prompt = (shot.get("video_prompt") or shot.get("slug_line") or "").strip()
         if not prompt:
             raise RuntimeError("这一镜没有 video_prompt")
+        # The camera block goes in front of the scene text, not into the stored
+        # video_prompt: the script on disk stays what the model wrote, and a
+        # re-render picks up any change here without regenerating chapters.
+        prompt = _camera_prefix(shot) + prompt
         lib = _read_json(os.path.join(PROJECTS, self.slug, "assets", "prompts.json"), {}) or {}
         base = os.path.join(PROJECTS, self.slug)
         work = os.path.join(base, "clips", "%02d" % n, "_frames")
