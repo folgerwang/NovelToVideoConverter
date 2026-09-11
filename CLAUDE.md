@@ -189,6 +189,49 @@ console shows.
   while models load is noise; one that keeps up for minutes with no segment
   written is the wedge. `journalctl -k` is the only place this shows.
 
+## Ruled out for the 2026-09-10 text-encoder wedge
+
+Every render after the 09:23 reboot wedged the same way - ComfyUI logs the
+text encoder loading and then nothing, GPU pinned at 100% and ~95% CPU for
+hours, the UNet never requested - while every render *before* that reboot
+finished in 27-28 min on the same weights, flags and canvas. What it is not:
+
+- **Not the shot or the prompt.** C01S01 and C01S02 wedge identically, with
+  different first frames, and prompt lengths are unremarkable (265-322 chars,
+  mean 283).
+- **Not the seed.** web_server sends none, so h3 samples from seed 0; a retry
+  with a random seed wedges the same way.
+- **Not the 1312x736 canvas.** The three renders that succeeded that morning
+  (06:53, 07:35, 08:02) were already at 1312x736.
+- **Not host memory.** 19 GB available, PSI pressure ~0, no swapping, and
+  comfy's CPU is ~99% user time with zero disk I/O while it hangs.
+- **Not HSA_XNACK / SVM demand paging.** The first wedge's only kernel
+  complaint was `svm_range_restore_work` hogging CPU with a doubling count,
+  which is the XNACK page-fault path, and `noretry=-1` leaves it on here.
+  `HSA_XNACK=0` was measured and wedged identically, so it was reverted.
+- **Not a kernel or driver upgrade.** Same 7.0.3-070003-generic, installed
+  2026-04-30; no linux-image or mesa package touched since 2026-08-22.
+- **Not the text-encoder file.** Both MiniMax encoders wedge the same way -
+  the Heretic one and the AWQ one that h3_server defaults to. They are nearly
+  the same file anyway: identical U8 (701) and F8_E4M3 (350) tensor counts,
+  differing only in 100 extra BF16 tensors.
+- **Not the comfy venv.** Nothing installed or upgraded there since
+  2026-09-03/04, so "an update landed while comfy was running and the reboot
+  applied it" does not hold.
+- **Not the GPU, ROCm, the driver or the attention path.** A Flux.2 image on
+  the same box, same process, straight after a wedge: past its own text
+  encoder in ~35 s, UNet loaded, 41 s/step, `Prompt executed in 357.80
+  seconds`, PNG written - at 100-102W and 33% VRAM. Every MiniMax wedge sits
+  at 32-34W and 18% VRAM with the UNet never requested. **So a reboot is not
+  indicated**: the hardware demonstrably works at its documented speed.
+
+What is left is the MiniMax-H3 text-encoder pass itself, and it is a
+regression, not a slow path: the comment block in launch.sh measured that
+pass at ~1:57 (inside a 12:55 clip) on 2026-09-08, and the 1312x736 renders
+at 06:53/07:35/08:02 on 09-10 took 27-28 min each. After the 09:23 reboot the
+same pass has never finished - 3h48m on the first attempt - on the same
+weights, packages and flags.
+
 ## This machine (launch.sh)
 
 - 128 GB Strix Halo, BIOS split 96 GiB VRAM / 31 GiB host. The host side is
