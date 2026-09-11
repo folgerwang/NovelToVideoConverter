@@ -8,9 +8,10 @@
 | --- | --- | --- |
 | Windows | [`setup.bat`](setup.bat) | 单张 RTX 4090 24GB 独立显存 |
 | macOS | [`setup.command`](setup.command) | Apple Silicon 统一内存（按 M3 Max 64GB 调参） |
-| Linux | [`launch.sh`](launch.sh) | Strix Halo 128GB（BIOS 划 96GiB 显存 / 31GiB 主存） |
+| Linux | [`setup.sh`](setup.sh) 装 · [`launch.sh`](launch.sh) 起 | Strix Halo 128GB（BIOS 划 96GiB 显存 / 31GiB 主存） |
 
-详细部署步骤见 [`部署说明.txt`](部署说明.txt) 与 [`部署说明-macOS.txt`](部署说明-macOS.txt)；
+详细部署步骤见 [`部署说明.txt`](部署说明.txt)、[`部署说明-macOS.txt`](部署说明-macOS.txt)
+与 [`部署说明-Linux.txt`](部署说明-Linux.txt)；
 Linux 这台机器上踩过的坑与不能回退的规则写在 [`CLAUDE.md`](CLAUDE.md)。
 
 ## 三步流水线
@@ -36,7 +37,8 @@ Linux 这台机器上踩过的坑与不能回退的规则写在 [`CLAUDE.md`](CL
 | --- | --- |
 | `setup.bat` | Windows：全部逻辑都在这一个文件里：菜单、安装、下载、各档位、体检、释放显存 |
 | `setup.command` | macOS 同上一份，按统一内存重调（档位可并存、Metal、日志后台） |
-| `launch.sh` | Linux：一条命令把整套栈拉起来（`start` / `stop` / `restart` / `status` / `logs <名字>`），不下载任何权重 |
+| `setup.sh` | Linux：只装不起 —— venv、ROCm torch、ComfyUI、权重、ollama 模型、`bin/ffmpeg`；不带参数就是一份体检报告 |
+| `launch.sh` | Linux：一条命令把整套栈拉起来（`start` / `stop` / `restart` / `status` / `comfy-restart` / `logs <名字>`），不下载任何权重 |
 | `CLAUDE.md` | 提示词与渲染这两块「不能回退」的规则，每一条都是被一张错图换来的 |
 | `scripts/get-llama.ps1` | 拉取 llama.cpp 的 Windows CUDA 预编译包 |
 | `scripts/get-llama-mac.sh` | 拉取 llama.cpp 的 macos-arm64 Metal 包，失败退到 brew / 源码编译 |
@@ -117,8 +119,19 @@ Windows / macOS 选菜单 `W`；Linux 上 `./launch.sh` 起完就已经在跑了
 
 ## 快速开始（Linux）
 
-`launch.sh` 只负责起服务，不装环境也不下权重 —— venv、ComfyUI、ollama 与各档位的权重
-要先按 `部署说明.txt` 备好。
+两个脚本分工是死的：`setup.sh` 只装不起，`launch.sh` 只起不装。起服务的那串参数
+（`--cache-none`、`--reserve-vram 16`、两个 ROCm 环境变量、C 档的卡死看门狗）每一个
+都是踩出来的，只留 `launch.sh` 这一份，不在别处再抄一遍。
+
+```sh
+./setup.sh             # 体检：有什么、缺什么、还差多少 GB（不动任何文件）
+./setup.sh all         # 缺什么装什么：venv、ROCm torch、ComfyUI、权重、ollama 模型
+./setup.sh weights     # 只补 ComfyUI 要加载的权重（满装约 90GB）
+```
+
+要装哪些权重，`setup.sh` 里不另记一份：它直接读 `launch.sh` 的 `H3_*` 默认值和
+`comfy-flux2-9x16.json` 里的节点名。表里查不到出处的文件只报出来，绝不猜着下 ——
+往 `diffusion_models/` 里下错一个 20GB 的文件，比直说不知道更糟。
 
 ```sh
 ./launch.sh            # 起所有还没在跑的；已经在听的端口原样放着，重复跑无害
@@ -148,9 +161,13 @@ macOS：
 - 终端不要跑在 Rosetta 下，`uname -m` 必须是 `arm64`，否则 torch 装成 CPU 版
 
 Linux：
-- ROCm 与 ollama 各自装好，`launch.sh` 只负责起它们
-- 没有系统 `ffmpeg` 也行：`venvs/tools` 里装 `imageio-ffmpeg`，再把 `bin/ffmpeg`
-  软链过去，`launch.sh` 会把 `bin/` 加进 `PATH`（旁白混流和拼片都要它）
+- ollama 自己装（<https://ollama.com/download>）；ROCm 不用装系统包 ——
+  `./setup.sh torch` 从 AMD 的 gfx1151 nightly 源装自带 ROCm 运行时的 torch 轮子，
+  三个版本号是钉死的（这台机器实测跑通的那一版，不钉住就无从判断故障是不是它变了）
+- 没有系统 `ffmpeg` 也行：`./setup.sh ffmpeg` 把 `venvs/tools` 的 imageio-ffmpeg
+  软链成 `bin/ffmpeg`，`launch.sh` 会把 `bin/` 加进 `PATH`（旁白混流和拼片都要它）
+- 除了写稿的 27B，ollama 还要一个 `qwen3-vl:8b`：每张图发布前都由它对着核查表过一遍，
+  没有它渲染照跑，只是每张都落个「无结论」
 
 ## 说明
 

@@ -1,0 +1,123 @@
+书影 Bookreel · 小说转视频 —— 部署说明（Linux）
+（Strix Halo 128GB · BIOS 划 96GiB 显存 / 31GiB 主存 · gfx1151 / ROCm）
+
+────────────────────────────────────────
+为什么是两个脚本
+────────────────────────────────────────
+Windows 的 setup.bat 和 macOS 的 setup.command 都是「装完顺手起」。这里拆成两个：
+
+  setup.sh     只装不起：venv、torch、ComfyUI、权重、ollama 模型、bin/ffmpeg
+  launch.sh    只起不装：把整套栈拉起来、停掉、看状态、跟日志
+
+拆开是因为起服务的那串参数不能有第二份。--cache-none、--reserve-vram 16、
+TORCH_BLAS_PREFER_HIPBLASLT=0、TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1、
+C 档的卡死看门狗与自动重启 —— 每一个都是踩出来的（原委见 CLAUDE.md），
+抄成两份就等于留下一份迟早会过期。
+
+────────────────────────────────────────
+环境要求
+────────────────────────────────────────
+· Python 3.11 或 3.12（本机 3.12.3）。还要 python3-venv。
+· git、curl。
+· ollama 自己装：https://ollama.com/download
+· ROCm 不用装系统包。./setup.sh torch 从 AMD 的 gfx1151 nightly 源装
+  torch/torchvision/torchaudio，轮子自带 ROCm 运行时（rocm-sdk-* 包），
+  只装进 venvs/comfy，不碰系统。
+· 没有系统 ffmpeg 也行，见下面 bin/ffmpeg 那条。
+· 磁盘：权重满装约 90GB。
+
+────────────────────────────────────────
+目录
+────────────────────────────────────────
+setup.sh                  装环境与下权重。不带参数 = 体检报告
+launch.sh                 起停整套栈：start / stop / restart / status /
+                          comfy-restart / logs <名字>
+CLAUDE.md                 提示词与渲染「不能回退」的规则，每条都是被一张错图
+                          或一次卡死换来的。改之前先读
+comfy-flux2-9x16.json     Flux.2 工作流模板。setup.sh 直接从这里读要下哪些权重
+services/story_server.py  第 1 步 · 圣经、正文、分镜、素材提示词      :8010
+services/web_server.py    网页控制台 + 渲染队列（服务端跑，关页面不断）:8080
+services/h3_server.py     第 3 步 · MiniMax-H3，Linux 上走 ComfyUI 后端 :9000
+services/tts_server.py    旁白 · CosyVoice2 零样本                    :9100
+services/asr_server.py    对齐 · FunASR，出字幕时间轴                 :9101
+services/embed_server.py  检索向量（可选，暂时没有页面调用）          :8002
+ollama                    第 1 步的 27B，以及核图用的 qwen3-vl:8b     :11434
+
+────────────────────────────────────────
+首次使用
+────────────────────────────────────────
+1. ./setup.sh
+   先看一眼体检：有什么、缺什么、还差多少 GB。它不写任何文件。
+
+2. ./setup.sh all
+   缺什么装什么，装过的跳过，所以装到一半断了就再跑一次。顺序是
+   venv → bin/ffmpeg → ROCm torch → ComfyUI → 权重 → models/ → ollama。
+   权重和大下载都会先问一句；ASSUME_YES=1 ./setup.sh all 一路答应。
+
+3. ./launch.sh
+   起完会把控制台地址打出来。BIND_LAN 默认 1，同一网络的手机或另一台机器
+   可以直接开——没有任何口令，只在信得过的网络里这么用。
+
+4. 三个页面就是三步：Story Studio 写稿、Reference Images 出参考图、
+   Pipeline Runner 出片合成。
+
+────────────────────────────────────────
+要下哪些权重，不在 setup.sh 里另记一份
+────────────────────────────────────────
+setup.sh 读两处来决定下什么：launch.sh 顶部的 H3_UNET / H3_CLIP / H3_VAE /
+H3_LORA / H3_AUDIO_VAE，以及 comfy-flux2-9x16.json 里节点写的文件名。
+它自己只存一张「出处表」（哪个文件在哪个仓库的哪个路径）。
+
+所以换权重就是改 launch.sh 或工作流里的文件名，setup.sh 下次自己跟上；
+如果新名字不在出处表里，它只会把这一行报出来，不会猜着下 ——
+往 diffusion_models/ 里下错一个 20GB 的文件，比直说不知道更糟。
+
+图那一档为什么用 GGUF：这台机器的瓶颈是 31GiB 主存而不是显存。ComfyUI 会为
+每个加载的模型在主存留一份，fp8mixed 的 UNet 33.8GB 放不下，Q4_K_S 是 18GB，
+文本编码器配 fp4_mixed 的 11.4GB。需要 ComfyUI-GGUF 节点，setup.sh comfy 会装。
+
+────────────────────────────────────────
+每张图都要过一遍核查
+────────────────────────────────────────
+渲染队列在服务端（web_server 的 Batch），关掉页面也不会断，重启服务器还能接着跑。
+每出一张图，都会把它交给 qwen3-vl:8b 对着一张核查表问一遍：刀是一把还是两把、
+出鞘没有、笔挂绳系在哪一头。答错就换个种子重渲。
+
+所以 ollama 要拉两个模型：写稿的 27B，和这个 8B 的视觉模型。少了后者渲染照跑，
+只是每张都落个「无结论」，错图就只能靠眼睛看出来。./setup.sh ollama 两个一起拉。
+
+────────────────────────────────────────
+没有系统 ffmpeg 也行
+────────────────────────────────────────
+venvs/tools 里的 imageio-ffmpeg 自带一份静态 ffmpeg，./setup.sh ffmpeg 把它软链到
+bin/ffmpeg，launch.sh 会把 bin/ 加进 PATH。旁白混流、拼片、funasr 导入都要它。
+
+────────────────────────────────────────
+排错
+────────────────────────────────────────
+· 先 ./launch.sh status，再 ./setup.sh
+  一个说谁没在听，一个说谁没装。控制台报某个端点离线，八成是后者。
+
+· 渲染卡住不动，GPU 100% 却一张都不出
+  文本编码器卡死在 SDMA ring 上。/interrupt 救不回来（ComfyUI 只在采样步之间
+  看中断标志），只能整个进程杀掉重起：./launch.sh comfy-restart。
+  h3_server 自己会在超时后调它。kernel 日志是最早的信号：
+  journalctl -k | grep -E 'svm_range_restore_work|sdma0'
+
+· 队列里还有任务，GPU 却是 0%
+  这是另一种：/interrupt 停掉了执行但没清掉队列项，前面那条永远「运行中」。
+  出路一样是 comfy-restart。
+
+· 刚杀完 ComfyUI，新进程起不来
+  驱动要几分钟才把 ring 还回来，期间任何 HIP 初始化都堵着。实测端到端 3分59秒，
+  脚本已经按「有耐心」写：等端口 600 秒，torch 探测包在 timeout 120 里，
+  而且那只是个警告，绝不能成为 comfy 起不来的原因。
+
+· torch 装不上：nightly 源会清理旧构建
+  setup.sh 顶部三个版本号是钉死的（这台机器实测跑通的那一版）。真被清掉了，
+  去 https://rocm.nightlies.amd.com/v2/gfx1151/torch/ 挑一组新的同日期三件套，
+  改掉 ROCM_TORCH / ROCM_VISION / ROCM_AUDIO。不钉住的代价是：下次出故障时，
+  没人说得清是不是 torch 自己换了。
+
+· 真正的解法不是某个参数：BIOS 的 UMA 划分从 96/31 改成 64/63 左右，
+  两个模型的主存副本就都放得下，--cache-none 也就不必了。
