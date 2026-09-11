@@ -39,6 +39,14 @@ VIDEO_PORT=9000         # slot C, MiniMax-H3
 # --- what to run -----------------------------------------------------
 LLM_MODEL="${LLM_MODEL:-qwen3.8-27b}"
 
+# The vision model every render is put to before it is published
+# (services/web_server.py, VERIFY_MODEL). It is served by the same ollama as
+# the 27B and waits behind it, which is why a verify call can sit for twenty
+# minutes while /assets or /script is generating. Exported rather than left to
+# web_server's own default, so the name is chosen in one place.
+VERIFY_MODEL="${VERIFY_MODEL:-qwen3-vl:8b}"
+export BOOKREEL_VERIFY_MODEL="$VERIFY_MODEL"
+
 # Weights that are not ComfyUI's live under models/. Nothing in this script
 # downloads anything; each optional slot names what it wants and steps aside
 # until that is on disk.
@@ -172,6 +180,9 @@ COMFY_EXTRA="${COMFY_EXTRA:---use-pytorch-cross-attention --reserve-vram 16 $COM
 
 PAGE_RUNNER="Pipeline%20Runner.dc.html"
 PAGE_STUDIO="Story%20Studio.dc.html"
+# Where the render queue and its verdicts are: the tile that says un-verified
+# is on this page, so the warning start_ollama prints has somewhere to point.
+PAGE_IMAGES="Reference%20Images.dc.html"
 
 # ==========================================================
 #  Small helpers
@@ -248,9 +259,19 @@ start_ollama() {
   spawn ollama ollama serve
   wait_port "$LLM_PORT" 30 ollama || return 1
   say "llm      :$LLM_PORT ollama"
-  if ! ollama list 2>/dev/null | awk '{print $1}' | grep -q "^${LLM_MODEL}\(:latest\)\?$"; then
+  local pulled
+  pulled="$(ollama list 2>/dev/null | awk 'NR>1{print $1}')"
+  if ! printf '%s\n' "$pulled" | grep -q "^${LLM_MODEL}\(:latest\)\?$"; then
     warn "model '$LLM_MODEL' is not pulled - ollama pull $LLM_MODEL"
-    warn "  (or set LLM_MODEL to one of: $(ollama list 2>/dev/null | awk 'NR>1{printf "%s ", $1}'))"
+    [ -n "$pulled" ] && warn "  (or set LLM_MODEL to one of: $(printf '%s ' $pulled))"
+  fi
+  # The verifier fails quietly: with the model missing, ollama answers every
+  # check with a 404, the queue records "no verdict" for the whole batch, and
+  # the tiles look the same as they do when verification is simply off. So it
+  # is said here, once, at the only moment anyone is reading this output.
+  if ! printf '%s\n' "$pulled" | grep -q "^${VERIFY_MODEL}\(:latest\)\?$"; then
+    warn "verify model '$VERIFY_MODEL' is not pulled - ollama pull $VERIFY_MODEL"
+    warn "  (until it is, every render publishes unchecked)"
   fi
 }
 
@@ -415,8 +436,12 @@ start_video() {
 # to start and the first thing that should ever come up.
 start_web() {
   if busy "$WEB_PORT"; then say "web      :$WEB_PORT already up"; return 0; fi
+  # --comfy, even though its default is this same address: COMFY_PORT at the
+  # top is where the port is chosen, and the render queue should submit to
+  # what it says rather than to a second copy of the number.
   spawn web python3 "$HERE/services/web_server.py" \
-    --host "$(bind_host)" --port "$WEB_PORT"
+    --host "$(bind_host)" --port "$WEB_PORT" \
+    --comfy "http://127.0.0.1:$COMFY_PORT"
   wait_port "$WEB_PORT" 20 web || return 1
   say "web      :$WEB_PORT"
 }
@@ -441,6 +466,7 @@ do_start() {
   printf '\n  Console\n'
   say "local:  http://127.0.0.1:$WEB_PORT/$PAGE_RUNNER"
   say "        http://127.0.0.1:$WEB_PORT/$PAGE_STUDIO"
+  say "        http://127.0.0.1:$WEB_PORT/$PAGE_IMAGES"
   if [ "$BIND_LAN" = "1" ]; then
     ip="$(lan_ip)"
     if [ -n "$ip" ]; then

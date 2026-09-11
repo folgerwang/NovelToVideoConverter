@@ -7,7 +7,9 @@
 #    Slot S  text    Qwen3-8B    Q4_K_M    ~5GB  :8001  (faster fallback)
 #    Slot B  images  Flux.2 (ComfyUI/MPS) ~24GB  :7860
 #    Slot C  video   MiniMax-H3 via h3.c  ~36GB  :9000
+#    Step 1  story   services/story_server.py    :8010  (talks to slot A)
 #    Always on       embeddings / TTS / align    :8002 :9100 :9101
+#                    render verifier (ollama)    :11434 qwen3-vl:8b
 #
 #  The 4090 build makes slots take turns because 24GB of VRAM only fits one
 #  at a time. Here the GPU shares the machine's 64GB, so A and B coexist with
@@ -67,12 +69,39 @@ M_H3="MiniMaxAI/MiniMax-H3"
 # has in its "small model" field.
 LLM_PORT=8000
 SMALL_PORT=8001
+STORY_PORT=8010
 EMBED_PORT=8002
 COMFY_PORT=7860
 HAILUO_PORT=9000
 TTS_PORT=9100
 ASR_PORT=9101
 WEB_PORT=8080
+# Not ours to choose: services/web_server.py asks the render verifier for a
+# verdict at http://127.0.0.1:11434 with no way to point it elsewhere.
+VERIFY_PORT=11434
+
+# --- step 1: the story service --------------------------------------
+# services/story_server.py is the whole of step 1 - blueprint, chapters, shot
+# scripts, asset prompts - and the Story Studio page has nothing to talk to
+# without it. It holds no weights: it is a FastAPI wrapper that speaks OpenAI
+# /v1 to whatever is on LLM_PORT, so slot A serves it here exactly as ollama
+# does on the Linux box. That is why it starts with the small services rather
+# than with the heavy slots, and why it is fine to start it before slot A -
+# it connects per request, not at boot.
+STORY_MODEL="qwen3.8-27b"        # the --alias do_llm gives llama-server
+
+# --- render verification --------------------------------------------
+# Every picture the render queue produces is put to a vision model before it
+# is published: web_server builds a checklist from the item (how many swords,
+# is the sword in its sheath, which end of the brush the strap is on) and
+# re-renders with a fresh seed when an answer comes back wrong. That call goes
+# to ollama, which on this Mac is here for nothing else - llama.cpp serves the
+# text slots. So it is one more install beside them:
+#     brew install ollama && ollama pull qwen3-vl:8b
+# Nothing breaks without it. Every take simply lands with no verdict and a
+# wrong picture is caught by eye or not at all.
+VERIFY_MODEL="qwen3-vl:8b"
+export BOOKREEL_VERIFY_MODEL="$VERIFY_MODEL"
 
 # --- web console ----------------------------------------------------
 # The page cannot be opened as a file:// URL: the dc runtime in support.js
@@ -128,6 +157,15 @@ EXCLUSIVE_SLOTS=0
 # visible cost. For a quick look at framing, drop to H3_STEPS=4 and add
 # --token-reduction to H3_EXTRA - minutes instead of tens of minutes.
 H3_MODEL="$MODELS/minimax-h3"
+# Canvas ceiling in pixels; the shape comes from whatever the console asks for,
+# snapped to the largest legal multiple-of-32 with the same aspect ratio. h3's
+# own limit is 768*1344 = 1032192, which is 1312x736 for a 16:9 clip and
+# 736x1312 for 9:16, and h3_server now defaults to exactly that. Cost is frames
+# x pixels, so this is the same dial as H3_STEPS by another route: 661504
+# (1088x608) was measured at about two thirds of the GPU time per second of
+# film. Named here rather than left to the service's default, so a change over
+# there cannot quietly lengthen every render on this Mac.
+H3_MAX_PIXELS=1032192
 H3_STEPS=20
 H3_LAYERS=45
 H3_REUSE=2
@@ -236,6 +274,8 @@ if [ "$#" -gt 0 ]; then
     hflogin)  do_word=do_hflogin ;;
     download) do_word=do_download ;;
     services) do_word=do_services ;;
+    story)    do_word=do_story ;;
+    verify)   do_word=do_verify ;;
     llm)      do_word=do_llm ;;
     small)    do_word=do_small ;;
     comfy)    do_word=do_comfy ;;
@@ -252,7 +292,8 @@ if [ "$#" -gt 0 ]; then
     *)
       say "unknown command: $1"
       say "try: install hflogin download services llm small comfy hailuo"
-      say "     embed tts asr web health stop getllama geth3 h3weights"
+      say "     story verify embed tts asr web health stop getllama geth3"
+      say "     h3weights"
       exit 1 ;;
   esac
 else
@@ -429,12 +470,15 @@ do_services() {
   ensure_audio
   ensure_tools
   blank
-  say "Always-on services: embeddings $EMBED_PORT, TTS $TTS_PORT, align $ASR_PORT"
+  say "Always-on services: story $STORY_PORT, embeddings $EMBED_PORT,"
+  say "TTS $TTS_PORT, align $ASR_PORT, render verifier $VERIFY_PORT"
   say "Anything already listening is left alone."
   blank
+  svc "$STORY_PORT" story story_server.py
   svc "$EMBED_PORT" embed embed_server.py
   svc "$TTS_PORT"   tts   tts_server.py
   svc "$ASR_PORT"   asr   asr_server.py
+  start_verify
   blank
 }
 
@@ -443,6 +487,50 @@ svc() {
   if [ ! -f "$SERVICES/$3" ]; then say "!  services/$3 missing - skipped"; return; fi
   if busy "$1"; then say ".  $2   already listening on $1 - left alone"; return; fi
   spawn "$2" "$2"
+}
+
+# The vision model that checks every render. Not a slot: ollama is on this Mac
+# for this and nothing else, it is idle between renders, and it unloads itself
+# after a few idle minutes. So it starts with the small services, and menu F
+# takes the model back from it without stopping the server the queue calls.
+start_verify() {
+  if busy "$VERIFY_PORT"; then
+    say ".  verify already listening on $VERIFY_PORT - left alone"
+  elif ! command -v ollama >/dev/null 2>&1; then
+    say "!  verify no ollama - every render publishes with no verdict"
+    say "   brew install ollama && ollama pull $VERIFY_MODEL"
+    return 0
+  else
+    spawn verify verify
+    local i=0
+    while [ "$i" -lt 60 ] && ! busy "$VERIFY_PORT"; do sleep 0.25; i=$((i + 1)); done
+    busy "$VERIFY_PORT" || say "!  verify did not come up - tail logs/verify.log"
+  fi
+  # Installed is not pulled. An ollama without the vision model answers every
+  # verify call with a 404, and the queue writes "no verdict" for the lot -
+  # which looks exactly like verification being switched off.
+  if command -v ollama >/dev/null 2>&1 \
+     && ! ollama list 2>/dev/null | awk '{print $1}' | grep -q "^${VERIFY_MODEL}\(:latest\)\?$"; then
+    say "!  verify $VERIFY_MODEL is not pulled - ollama pull $VERIFY_MODEL"
+  fi
+}
+
+# ollama binds 127.0.0.1 and that is right: web_server is the only thing that
+# calls it, from this Mac, and there is no password on it.
+do_verify() {
+  command -v ollama >/dev/null 2>&1 || { say "x ollama not installed - brew install ollama"; return 1; }
+  exec ollama serve
+}
+
+# Step 1 of 3. venv-tools, because that is where fastapi lives.
+do_story() {
+  local p; p="$(venv_py tools)"
+  [ -x "$p" ] || { say "x venv-tools missing - run menu 1."; return 1; }
+  "$p" -c 'import fastapi, uvicorn' >/dev/null 2>&1 || {
+    say "x venv-tools has no fastapi - run menu 3, which installs it."; return 1; }
+  exec "$p" "$SERVICES/story_server.py" \
+    --host "$(bind_host)" --port "$STORY_PORT" \
+    --llm "http://127.0.0.1:$LLM_PORT/v1" --model "$STORY_MODEL"
 }
 
 do_embed() {
@@ -467,7 +555,11 @@ do_asr() {
 # which is the point: it is the one thing that should always come up.
 do_web() {
   need_python || return 1
-  exec "$PY" "$SERVICES/web_server.py" --host "$(bind_host)" --port "$WEB_PORT"
+  # --comfy, even though the default is this same address: COMFY_PORT above
+  # is the one place the port is chosen, and the render queue submits to
+  # whatever it says rather than to a second copy of the number.
+  exec "$PY" "$SERVICES/web_server.py" --host "$(bind_host)" --port "$WEB_PORT" \
+    --comfy "http://127.0.0.1:$COMFY_PORT"
 }
 
 # ==========================================================
@@ -545,13 +637,17 @@ do_hailuo() {
   command -v ffmpeg >/dev/null 2>&1 || say "! ffmpeg missing - h3.c needs it to encode: brew install ffmpeg"
 
   say "Slot C - video.  MiniMax-H3 on Metal, port $HAILUO_PORT"
-  say "steps $H3_STEPS, layers $H3_LAYERS, reuse $H3_REUSE$H3_EXTRA"
+  say "steps $H3_STEPS, layers $H3_LAYERS, reuse $H3_REUSE, $H3_MAX_PIXELS px$H3_EXTRA"
   say "Tens of minutes per 10s clip. The console polls, so leave it running."
+  # --backend h3c is h3_server's default today and is still spelled out: the
+  # other backend drives ComfyUI's MiniMax nodes, which is what the Linux box
+  # uses, and this path must not follow a change of default over there.
   exec "$(venv_py tools)" "$SERVICES/h3_server.py" \
     --host "$(bind_host)" \
-    --port "$HAILUO_PORT" --bin "$H3_DIR/h3" --model "$H3_MODEL" \
+    --port "$HAILUO_PORT" --backend h3c --bin "$H3_DIR/h3" --model "$H3_MODEL" \
     --out "$ROOT/output/video" \
-    --steps "$H3_STEPS" --layers "$H3_LAYERS" --reuse "$H3_REUSE" $H3_EXTRA
+    --steps "$H3_STEPS" --layers "$H3_LAYERS" --reuse "$H3_REUSE" \
+    --max-pixels "$H3_MAX_PIXELS" $H3_EXTRA
 }
 
 # V - the H3 weights, kept out of menu 2 because they are ~144GB on their own.
@@ -613,11 +709,13 @@ do_health() {
   say "[health]"
   local probes="$LLM_PORT|main LLM|/v1/models
 $SMALL_PORT|small LLM|/v1/models
+$STORY_PORT|story step 1|/health
 $EMBED_PORT|embeddings|/health
 $COMFY_PORT|ComfyUI|/system_stats
 $HAILUO_PORT|video (h3)|/health
 $TTS_PORT|CosyVoice|/health
 $ASR_PORT|align|/health
+$VERIFY_PORT|verify (vlm)|/api/tags
 $WEB_PORT|web console|/"
   local port label path code
   while IFS='|' read -r port label path; do
@@ -630,7 +728,7 @@ $WEB_PORT|web console|/"
   # There is no nvidia-smi here: on unified memory the GPU's footprint is
   # just the process RSS, so report that instead of a VRAM figure.
   local pid name
-  for name in llm small comfy hailuo embed tts asr web; do
+  for name in llm small story comfy hailuo embed tts asr verify web; do
     [ -f "$LOGS/$name.pid" ] || continue
     pid="$(cat "$LOGS/$name.pid")"
     if kill -0 "$pid" 2>/dev/null; then
@@ -658,6 +756,11 @@ do_stop() {
   # h3_server.py's own child: killing the server leaves the render orphaned,
   # and it holds ~36GB.
   pkill -f "$H3_DIR/h3 -d" 2>/dev/null
+  # ollama is not a slot and stays up - the render queue calls it between
+  # images - but the vision model it is holding is a few GB of the same
+  # unified memory, and it reloads in seconds when the next verdict is asked
+  # for. Freeing the GPU means freeing that too.
+  command -v ollama >/dev/null 2>&1 && ollama stop "$VERIFY_MODEL" >/dev/null 2>&1
   sleep 1
 }
 
@@ -763,7 +866,7 @@ menu() {
     say " 1   Install                 venvs + llama.cpp + ComfyUI"
     say " L   Log in to Hugging Face  needed for gated repos"
     say " 2   Download model weights"
-    say " 3   Start always-on svcs    embeddings / TTS / align"
+    say " 3   Start always-on svcs    story / embeddings / TTS / align / verify"
     blank
     say " A   Slot A - text     Qwen3.8-27B   script, shots, prompts   :$LLM_PORT"
     say " S   Slot S - small    Qwen3-8B      faster fallback          :$SMALL_PORT"
@@ -813,8 +916,12 @@ do_openweb() {
     while [ "$i" -lt 20 ] && ! busy "$WEB_PORT"; do sleep 0.25; i=$((i + 1)); done
     busy "$WEB_PORT" || { say "x web console did not come up - tail logs/web.log"; pause; return 1; }
   fi
+  # The runner is step 3 and the studio is step 1; Reference Images and
+  # Library are reached from them and are served from the same address.
   local page="Pipeline%20Runner.dc.html"
+  local studio="Story%20Studio.dc.html"
   say "local:  http://127.0.0.1:$WEB_PORT/$page"
+  say "        http://127.0.0.1:$WEB_PORT/$studio"
   if [ "$BIND_LAN" = "1" ]; then
     local ip; ip="$(lan_ip)"
     [ -n "$ip" ] && say "remote: http://$ip:$WEB_PORT/$page   (same network)"
