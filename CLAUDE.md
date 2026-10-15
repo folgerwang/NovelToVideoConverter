@@ -1,251 +1,128 @@
 # Bookreel — rules that must not regress
 
-These were each earned by a wrong picture. They live in code; this file says
-where, so nobody "simplifies" them away. Chinese labels are the ones the
+These were each earned by a wrong picture. They live in code; `docs/rules/`
+says where, so nobody "simplifies" them away. Chinese labels are the ones the
 console shows.
 
-## Prompts (services/story_server.py)
+**This file is the index. The rules are in `docs/rules/*.md`** - twenty topic
+files, each entry with the defect that bought it, what was measured, and the
+function it lives in.
 
-- **Every image/video prompt carries the world in plain words, built in code.**
-  `_anchor()` + `_anchored()` compose `head + model text + tail` for reference
-  images (`/assets`) and shot `video_prompt`s (`/script`). The blueprint
-  schema has `world.setting_type / era / place / geography / history / people`
-  and `characters[].gender / ethnicity / social_class`; the LLM is required to
-  fill them. Never rely on the LLM to "remember" era, ethnicity or gender —
-  ch01 (a Ming male scholar) rendered as a European woman when we did.
-- **Head is subject-first; culture/society go in the tail.** Opening tokens set
-  the picture. Putting 运河/漕运/木帆船 in front made a portrait render as a
-  fishing scene. `tech_level` (a list of objects) is only allowed behind
-  locations and shots, never near a portrait or a single prop.
-- **No negations for nouns you don't want.** A diffusion model hears the noun
-  ("没有旗帜" → flags). Strip the word from the text instead and let the
-  verifier catch it. `旗杆/旗帜` are banned from scene descriptions.
-- **Characters: 4 passport-style views** (`CHAR_VIEWS`): 正面/左侧/右侧/背面,
-  whole body, plain ground, one shared seed per character, left/right stated
-  as screen direction in Chinese + English ("鼻尖指向画面右边缘 … facing
-  right"), side/back views say the far side's features are not visible.
-  Tail states prop counts ("一把刀就是一把刀，插在鞘中"), period footwear
-  without laces, and that described scars are old, pale and healed — a
-  "旧刀疤" otherwise renders as a fresh red gash, and a correction saying
-  "没有伤口" contradicts the blueprint's own scar. The verifier asks about
-  *fresh* wounds only. And never describe a scar with the character 刀
-  ("刀疤从腕延伸至掌"): the model reads 刀 as a weapon cue — 陆横 got a
-  second, drawn sword and a bleeding forearm from that one phrase. Write
-  "旧伤痕", pale and healed. Likewise "腰佩长刀" draws a bare blade: name the
-  sheath as the object ("腰间挂着一把带鞘的佩刀，刀刃完全收在黑漆木鞘里，
-  只露出刀柄"), and on a reference sheet keep scars near-invisible ("很淡的
-  白色旧痕") — the model over-paints any mark it is told about.
-- **Scenes: 9 views** (`LOC_VIEWS`): 外·正/背/左/右, 内·正/背/左/右, 俯瞰,
-  16:9, **one seed per view** (a shared seed gave 18 identical courtyards).
-  The LLM describes a place in parts — `exterior` (front gate), `exterior_sides`
-  (back/side walls, must not mention the gate), `layout` + `interior_front/
-  back/left/right` (one wall each, consistent with the layout; the back view
-  sees the door's inside and the *backs* of the main furniture), `roof`,
-  `surroundings`, `light`, `style` — and each view is composed only from the
-  parts its camera can see (`VIEW_PARTS`). Side-wall views say the main desk
-  and chair are *not in frame* — "only at the frame's edge" put them back in
-  the centre; the verifier asks whether the centre is a desk facing the
-  camera. Side-wall views get their wall text only — the `layout` line names
-  the desk, and the model centres whatever it is told about — and so does
-  the room noun: "主事厅内朝西看" drew a centred desk three times with no desk
-  in the text; side views say "室内朝西看". Raw parts are
-  stored on each item
-  (`parts`) so views can be re-composed without a model call.
-- **Name the object, not the word.** "油灯" rendered as an electric desk lamp,
-  "木格窗" got glass panes, "腰佩长刀" a bare blade, "旗杆" a steel flagpole.
-  Scene text substitutes the object ("陶碟油灯（小陶碟盛油、一根灯芯明火、
-  没有灯罩）") at composition time (`_OBJECTS`), and every window in any
-  wording — 小窗（木棂）, 木棂窗, 花窗 — gets "木格糊纸、没有玻璃"
-  (`_paper_windows`); the model glazes any window it is not told about.
-  "书/书籍" on a shelf become modern spined paperbacks: scene text says
-  "线装书（无书脊、平摊叠放、封面贴题签、纸页发黄）". Night light phrased as a
-  shape becomes a fixture: "月光在地面形成冷蓝窄条" drew blue LED strips across
-  the floor and "光锥" a wall spotlight — say "清冷的银白色月光", never a cone
-  or a strip.
-- **Props:** structure stated explicitly ("毛笔只有一端有笔头，挂绳系在没有
-  笔头的杆尾") — the brush strap was drawn hanging from the ferrule; the
-  verifier asks which end the strap is on.
-- Location plates carry `time_of_day`; night plates get real night light,
-  never the day prompt with "，夜" appended.
-- **`/assets` never publishes fewer items than the project had.** The reply
-  must cover every cast id and location id (`require=_complete`, 48k
-  tokens); anything still missing is carried over from the previous
-  prompts.json. A truncated reply once overwrote 97 items with 38 and the
-  render queue failed 47 keys as "not in prompts.json".
+- **Before changing code, a prompt or a queue in an area below, READ its
+  file(s) first, whole.** Then `grep -rn "<function or word>" docs/rules/` for
+  whatever you are about to touch: a rule is filed where it was found, which
+  is not always where you would look (fight foley is in `video-prompt.md`,
+  hot-reload in `chapter-film.md`).
+- **Before diagnosing a defect** (a caption, a duplicate person, a wrong
+  costume, a silent door), grep the symptom first. Most have happened before.
+- **A new rule goes in its topic file**, written like the others: date, what
+  was seen, what was measured, where in code. Add a line HERE only for a new
+  always-on principle or a new file. Do not let this file grow back.
 
-## Rendering (services/web_server.py, Reference Images.dc.html)
+## Always true, whatever you are touching
 
-- **The render queue lives in the server** (`Batch`, `/api/batch`). State is
-  `projects/<slug>/assets/batch.json`; it resumes after a server restart,
-  retries when ComfyUI is down, appends when asked while running, stops
-  between images. The page only shows progress and asks; a browser-driven
-  batch dies with the tab.
-- **Every render is verified** by a vision model (`qwen3-vl:8b` via ollama,
-  `VERIFY_MODEL`) with a structured checklist derived from the item
-  (`_checks_for`); counts are asked decomposed (刀 / 刀鞘 / 出鞘刀身 — asked
-  plainly it said "1" for two swords). A failed check re-renders with the
-  failures spelled out and a new seed, `VERIFY_RETRIES` times; verdicts are
-  stored on the take and shown on the tile (✓ 已核 / ⚠ n). The vision model
-  shares ollama with the 27B: while `/assets` or `/script` is generating, a
-  verify call can wait 20 min (timeout is 1500 s). A skipped verdict
-  (`ok: null`) is re-checked later by queueing the key with `mode: "check"`,
-  which verifies the picture on disk and only renders if it fails. An empty
-  or half-empty reply from the vision model is "no verdict" (`ok: null`),
-  never "everything failed" — one empty reply once sent a correct image back
-  for a needless re-render. The model thinks before answering and cannot be
-  told not to, so give it a large `num_predict` (8000; a dark night interior
-  used 6k tokens thinking and answered nothing at 4000) and a bounded
-  `num_ctx` (8192 — unbounded, the 8B took 40 GiB of VRAM). An empty reply
-  is retried once before it counts as "no verdict". **The request prefills the
-  assistant turn with `{"<first key>":`** — that is what stops the reasoning
-  loop: without it a busy wharf scene burned 13172 tokens in 5m50s and
-  answered nothing, with it the same image scores in 15 s. The image goes to the
-  model as a 1280-px JPEG, not the 1920×1080 PNG: full-size image tokens
-  plus reasoning overflowed an 8k context and the answer was cut off. A failed check is asked a
-  second time (temperature 0.4) and only problems seen twice trigger a
-  re-render — the model once called one sheathed sword "two, one drawn".
-  Accessories the description names (笔挂、刀鞘、系绳) are part of the object,
-  not a second item — a correct brush once failed "物件 2 件" for its strap.
-  An object's own lettering (a book's title slip, a seal, an inscription) is
-  not a watermark: the text check asks only about text unrelated to the object.
-  A picture accepted by hand: `/api/take` to make it live, then
-  `/api/batch/skip {keys}` so the queue drops (or interrupts) its re-render.
-  Corrections go at the FRONT of the prompt (`【必须】…`) and say what is
-  there ("双手空着自然下垂，刀完整在鞘中"), never what is not; appended
-  "不出鞘" survived two re-renders of a drawn sword.
-- **Every take is kept** (`assets/images/_takes/<asset>/<n>.png` + sidecar);
-  the live file is the chosen take. Re-renders use a random seed and record
-  it. Image URLs carry `?t=mtime` so a re-render actually shows.
-- The page never uses `String.replace` to fill the workflow template — it hit
-  the `_comment` first and sent the literal `__PROMPT__` to ComfyUI for weeks.
-  Assign `wf["20"].inputs.text` directly.
+- **No working negative prompt** on Flux by default (BasicGuider) or on h3
+  (cfg 1.0, ZeroOut). Two levers only: say the true thing positively, and
+  strip the word (`filmwords`, `look`). Real negatives exist only on character
+  sheets and location plates (CFGGuider, cfg 2.0), Stable Audio and ACE-Step.
+- **Never negate a noun** - 没有旗帜 draws flags, 无佩剑 a sword, "no vocals"
+  vocals. Cut the word, or say what IS there.
+- **Name the object, not the word** (油灯 → 陶碟油灯…, every window 木格糊纸,
+  剑 → the straight sword described grip first). Shape words for light (窄条,
+  光锥, 碎斑) and the word 月 become fixtures and moons.
+- **World context is composed in code** (era, place, ethnicity, gender, age,
+  costume), never left for the LLM to remember.
+- **h3 paints whatever is not a drawable thing in the world**: labels, colons,
+  digits, Latin, cast names, date + place, camera and frame talk, statements
+  about the picture, quoted speech, stage directions. A video prompt holds
+  people, clothes, objects, light and action only; `audit_video_prompt` runs
+  last on the exact string and errs long. Audit RENDER-TIME text, not just
+  what is stored.
+- **Prompts are built at render time**; the script on disk stays what the LLM
+  wrote, so a rule change reaches every queued shot.
+- **The checker advises; the person decides.** Never discard a flagged clip or
+  frame (it is a take, or moved to `_rejected/`); no automatic re-render
+  (`VERIFY_RETRIES` 0, `CLIP_AUTO_FIX` off); checker text is never a prompt;
+  the person's 重出意见 is the only correction. `ok: null` is NOT a pass -
+  re-check before a render. A bulk button never redraws a picture that passed.
+- **Deleting is moving** (`_trash/`, `_rejected/`); every take is kept. A
+  film is never overwritten: the old one goes to `film/_versions/`.
+- **A pass that costs GPU measures its own result** - lip-sync logged ✓ for
+  six GPU-hours without changing a pixel.
+- **Clips chain.** Same people in the same clothes from one clip to the next;
+  the chain is read off disk in script order; each person's costume sits
+  inside their own noun phrase; one plate view per location.
+- **The sound is never cut.** A voiced shot is as long as its line; `apad`
+  always gets `whole_dur`; audio is `-c:a copy` wherever it can be. **A shot
+  with lines is never rendered mute:** the voice is step 1; a dead :9100 is
+  restarted and waited for, and if it stays dead the queue STOPS with the
+  shot at its head (`VoiceUnavailable`) - it never answers "no lines".
+- **Queues live in the server**, state on disk, resumed on restart. No wait is
+  unbounded. A failed side pass (film join, foley, music, grade, lip-sync)
+  loses that pass, never the shot or the queue.
+- **Rule modules hot-reload** (filmwords, fightcut, foley, look, stage,
+  shotqa): put a new rule there. A web_server edit needs a restart - BETWEEN
+  shots, clearing ComfyUI's queue first. Before blaming a rule that is already
+  fixed, compare `ps -o lstart -p $(cat logs/web.pid)` with the file's mtime.
+- **This machine:** `./launch.sh comfy-stop` before generating text.
+  `launch.sh start` is TOTAL - use `restart-one <svc>`. No big download or
+  CosyVoice load beside a render. Lip-sync runs with ComfyUI stopped.
+  `journalctl -k` is where a wedge shows.
+- **Geometry is load-bearing:** canvas 1312x736, sides multiples of 32,
+  segments of 90 frames (17n+5), stall ceilings calibrated to ~27 min a
+  segment. Read `previz.md` and `clips.md` before moving any of them.
+- **Small traps:** routes defined after `if __name__ == "__main__":` never
+  register; ffmpeg temp files are `<name>.part.mp4`; percent-encode `/media`
+  paths (日/夜/晨); ComfyUI's POST /queue and /interrupt return an empty body;
+  a `.dc.html` component takes no commas between methods and booleans as
+  `{{ true }}` - `node --check` its script block after every edit.
+- **Measured and ruled out - do not spend the GPU again:** NAG / a negative
+  for h3; the Fun ControlNet on this base model (adaln mismatch - previz is
+  for the person's eyes only); raising the canvas for resolution; ACE-Step for
+  foley; synthesized blade clashes; the aligner for subtitle timing; IndexTTS
+  as narrator; an octave of formant shift; a bright-pixel caption detector.
 
-- Reference plates have 日/夜/晨 in their file names; every server-side fetch of
-  a `/media/...` URL must percent-encode the path (`h3_server._materialize_image`
-  returned 400 "'ascii' codec can't encode" for every night plate).
+## The files
 
-## Clips (services/h3_server.py, VideoBatch in web_server.py)
+| `docs/rules/` | What is in it | Read before touching |
+|---|---|---|
+| `prompts.md` | Blueprint and reference images: `_anchor`/`_anchored`, 4 character views, 9/5 location views (`_site_kind`, `VIEW_PARTS`), `_OBJECTS`, scars, `strip_absent/states/pose/carried/face`, `UNIFORM_RULE` and faction colours, carried props → 物品栏, white board, back view, `note_for_sheet`, plate/sheet negatives and CFG, night light, `look.py` (novel-derived positive/negative), `_checks_for`, `/assets` completeness, `_covers_speech` | story_server `/blueprint` `/assets` `/script` require; sheet text in filmwords; look.py; the verifier's checklist |
+| `import-novel.md` | `/import`: parts, digests, `is_group` crowds, `_age_words`, book chapters, `AutoRun` (载入小说), `build_book_films` | import, autorun, crowd counting |
+| `rendering.md` | Image queue `Batch`, vision verifier settings (prefill, num_predict, 1280 px), takes, 认可 / 重出 / 重出意见, editable prompts (`/api/prompt`), `_passed_keys`, orphaned ComfyUI jobs | `Batch`, `_verify`, Reference Images page |
+| `previz.md` | `stage.py` / `previz.py`: room coordinates, 内/外 rooms, `solve_camera`, lock-off and push, motion gate (`previz_moves`), control video (crop, cold shots, withheld), ControlNet conversion and why it has never rendered, `ensure_first_frame`, head counts (pre-flight, `clip_headcount`, `cast_count`), `shot_seconds` | stage, previz, first frames, head count, `SEG_SECONDS`, canvas |
+| `clips.md` | `h3_server` / `VideoBatch`: stall deadlines, wedge and zombie recovery, `comfy_pid`, retries on a new seed, `apad=whole_dur`, canvas budget and `_trim_to_format` | h3_server, the render loop's waits, launch.sh comfy-restart, canvas |
+| `lipsync.md` | LatentSync 1.6: own venv, dialog-only driving wav, new take, ComfyUI stopped, no-face frames, 24 fps patches, the tracer's stdout (two blind runs), `redo` from the source take | lipsync.py, `LipsyncBatch`, third_party/LatentSync |
+| `stop-all.md` | `/api/stop-all`: graceful vs hard, queues not services | `stop_everything` |
+| `upscale-4k.md` | Separate queue, idempotent, streamed frames, cover-crop, spandrel inference tensors | upscale.py, `UpscaleBatch` |
+| `video-prompt.md` | What h3 is told: `_film_prompt`, `_segment_prompt`, `_people_clause`, `wear_clause`, mouth clause and cold-start lead, `action_beats`, filmwords substitutions (数字, `strip_camera`, `strip_speech`, jargon), `audit_video_prompt`, caption guard, narration cap and `inner` lines, `_facing_clause` (who talks to whom, face to face, listener resolved in code). ALSO: fight and crowd foley (`make-fight-foley.py`, `sfx_plan(grade=)`, 喊好), `shotqa` review, `fighters` / `fighter_check`, `fightcut.ripple`, first-frame staleness | anything that builds or filters a video prompt; shotqa; fight foley timing |
+| `chapter-film.md` | `build_chapter_film`, title card, SRT offset, Range requests, music spans mixed on the film. ALSO: `_hot_reload`, clip 重出 in shot order, restarting web_server mid-render | film join, `_title_clip`, `_mix_music`, queue order, restarts |
+| `narration.md` | CosyVoice3 RL engine, `_prompt_text`, instruct, why the voice is the reference clip, narrator_male, formant shift | tts_server, `BOOKREEL_TTS_MODEL`, narrator voices |
+| `subtitles.md` | `chapter_srt`, `_clamp_cues`, `_speech_map`, `_snap_cues`, no picture cap on a voiced shot | cues, SRT/VTT, shot length ceilings |
+| `action-scenes.md` | Fights: the 分镜 fight rules (rounds, arc, footwork, floor not a line, three layers, kicks), `_performance_clause`, `unfreeze`, `is_combat` / `_energy_clause`, `beats_seconds`, `JIAN_LOOK`, `fightcut` (speed, ramp, hits, crop camera, `_raw/`), `strip_glow`, orbit, `_film_dips`, first-frame angle and `FF_COMBAT`, `circle_fight` | fightcut.py, fight prompts, the /script fight section, soft transitions |
+| `cutting.md` | Checker flags only (`_rejected/`), continuity (`_inherit_ratio`, `_continuity_ref`, `one_choice`, `_published_prev`), per-person costume, one plate view per scene (`_pick_first_frame`), `first_frame_refs`, size varies / angle holds, `scripts/check-cuts.py` | frame inheritance, first-frame references, the 分镜 prompt's cutting rules |
+| `2026-10-06-faces-noise-mouths.md` | Bust-crop refs (`_bust_crop`), `_speaker_clause`, murmur levels and ducking (`_place_loops`, `SFX_DEDUP_SECONDS`, `SFX_ONE_MAX`), `_cut_picture` tail trim, lip-sync face hint / min face / `mouth-trace.py`, `strip_speech` 后 forms, `soften_face` | face consistency, foley levels, voiced-shot length, lip-sync verdicts |
+| `casting.md` | `casting.json`, `_voice_for`, voice library (upload, transcribe, save, delete-by-move), `_voice_version`, auditions on a character's own line, grouping by work, `.dc.html` traps | 配音 panel, `/api/voice/*`, voices/ |
+| `foley.md` | `foley.py` closed vocabulary and templates, `look.materials`, Stable Audio (T5-base, head click, `sfx_extract`), shelves by profile, `.wav` wins, `SFX_SYNTH`, Mixkit recordings, interiors and scene offsets, Mandarin cheer and murmur | foley.py, `SfxBatch`, `sfx_plan`, `_mix_sfx`, sfx/ |
+| `music.md` | `MusicBatch`, one bed per location, never replayed, 240 s ceiling, English tag vocabulary (`look.music`, `instrument_tag`), `MUSIC_NEGATIVE` | music beds, ACE-Step tags |
+| `wedge-2026-09-10.md` | What the text-encoder wedge is NOT (nine things ruled out) | re-diagnosing a hung render |
+| `machine.md` | Strix Halo memory split, comfy-stop before text, OOM from downloads, `launch.sh start` vs `restart-one`, ComfyUI flags and their measurements | launch.sh, service flags, memory |
 
-- **No wait on a render is unbounded.** ComfyUI answering /history is not proof
-  it is doing anything: on 2026-09-10 a job wedged inside the text encoder and
-  sat at 100% GPU for 3h48m while the server stayed cheerful, and `_run_comfy`
-  polled it the whole time because it only gave up when ComfyUI went
-  *unreachable*. Every segment here is the same shape (90 frames, one canvas,
-  4 steps, ~27 min on this box), so wall clock is a fair health check:
-  `--comfy-stall` (90 min, `H3_STALL`) in h3_server, `VIDEO_STALL` (100 min) in
-  VideoBatch. The batch's own deadline is checked *before* the poll, not inside
-  the "not finished yet" branch — the old one sat inside it, so a dead video
-  service, whose poll raises, skipped the deadline forever.
-- **/interrupt cannot reach a wedged job.** ComfyUI tests the interrupt flag
-  between sampler steps; a text encoder stuck on a jammed SDMA ring never
-  reaches one, and the queue still showed the prompt as running an hour later.
-  Only killing the process frees the ring — the driver releases it when the
-  last reference goes away. That is `launch.sh comfy-restart`, which
-  h3_server runs itself via `--comfy-restart` (`_comfy_recover`).
-- **Killing ComfyUI mid-model-load jams the ring in turn**, for about four
-  minutes: `kworker/…+ttm` threads sit in D, and *every* new HIP init blocks
-  behind them. So the restart path has to be patient, not clever —
-  `wait_port comfy 600`, the `torch.cuda.is_available()` precheck wrapped in
-  `timeout 120` (it is only a warning and must never be what stops comfy
-  coming back), and 15 minutes in `_comfy_recover` for it to answer again.
-  Measured end to end: 3m59s.
-- **/interrupt can leave a zombie in `queue_running`.** Cancelling a job while
-  ComfyUI is loading a model stops the execution but not the queue entry: the
-  prompt still shows as running, every prompt behind it waits forever, and the
-  GPU sits at **0%** - the opposite of the wedge, where it sits at 100%. So
-  "queue_remaining > 0 with an idle GPU" is its own signature, and the only
-  way out is the same restart. `_comfy_recover` covers it: it re-checks
-  `_comfy_knows` after the interrupt and restarts when the prompt is still
-  there. Do not read a cancelled task's disappearance from h3 as proof that
-  ComfyUI let go of it.
-- **Resolve comfy's pid by port, not only by the pid file** (`comfy_pid` in
-  launch.sh). `logs/comfy.pid` goes stale whenever comfy is started any other
-  way, or a restart is interrupted between the `rm` and the `spawn`. Killing a
-  stale pid leaves the real process alive and the port busy, and `start_comfy`
-  then says "already up" and the wedge is never cleared.
-- **A failed shot is re-rendered, with a new seed.** One attempt per shot left
-  a hole in the finished video. `VIDEO_RETRIES` is 2, and the retry passes a
-  random seed — web_server sends none by default, which makes h3 sample from
-  seed 0, so a plain retry reproduces the same wedge frame for frame. A stop
-  is never retried.
-- **`apad` must be given a length.** The final mux pads the narration out to
-  the picture; bare `apad` pads *forever*, and `-shortest` does not stop it
-  when the video is `-c:v copy`, so ffmpeg sat at a fixed file size until
-  `_ff`'s 15-minute timeout and the shot - four segments, ~two hours of GPU -
-  was thrown away with a truncated "moov atom not found" final. The clip
-  never published, and the leftover `-seg*.mp4` in `_frames` are the tell that
-  `_render` never reached its cleanup. Pass the picture's own duration
-  (`apad=whole_dur=<_duration(joined)>`) and it ends by itself: 0.15 s
-  measured, against a 15-minute hang. The silent branch is fine as it is -
-  `anullsrc` is an input, not a filter output, so `-shortest` does end it.
+## By code file
 
-- **h3 keeps its tasks in memory**, so a 404 from `/v1/query/video_generation`
-  means it was restarted and that render is gone. Fail the segment then and
-  there; it used to fall into the generic `except: continue` and wait out the
-  full deadline for nothing.
-- The kernel says it first: `svm_range_restore_work [amdgpu] hogged CPU`
-  doubling (4, 5, 7, 11, 19, 35, 67, 131 times) and then
-  `Fence fallback timer expired on ring sdma0` in a steady stream. A storm
-  while models load is noise; one that keeps up for minutes with no segment
-  written is the wedge. `journalctl -k` is the only place this shows.
-
-## Ruled out for the 2026-09-10 text-encoder wedge
-
-Every render after the 09:23 reboot wedged the same way - ComfyUI logs the
-text encoder loading and then nothing, GPU pinned at 100% and ~95% CPU for
-hours, the UNet never requested - while every render *before* that reboot
-finished in 27-28 min on the same weights, flags and canvas. What it is not:
-
-- **Not the shot or the prompt.** C01S01 and C01S02 wedge identically, with
-  different first frames, and prompt lengths are unremarkable (265-322 chars,
-  mean 283).
-- **Not the seed.** web_server sends none, so h3 samples from seed 0; a retry
-  with a random seed wedges the same way.
-- **Not the 1312x736 canvas.** The three renders that succeeded that morning
-  (06:53, 07:35, 08:02) were already at 1312x736.
-- **Not host memory.** 19 GB available, PSI pressure ~0, no swapping, and
-  comfy's CPU is ~99% user time with zero disk I/O while it hangs.
-- **Not HSA_XNACK / SVM demand paging.** The first wedge's only kernel
-  complaint was `svm_range_restore_work` hogging CPU with a doubling count,
-  which is the XNACK page-fault path, and `noretry=-1` leaves it on here.
-  `HSA_XNACK=0` was measured and wedged identically, so it was reverted.
-- **Not a kernel or driver upgrade.** Same 7.0.3-070003-generic, installed
-  2026-04-30; no linux-image or mesa package touched since 2026-08-22.
-- **Not the text-encoder file.** Both MiniMax encoders wedge the same way -
-  the Heretic one and the AWQ one that h3_server defaults to. They are nearly
-  the same file anyway: identical U8 (701) and F8_E4M3 (350) tensor counts,
-  differing only in 100 extra BF16 tensors.
-- **Not the comfy venv.** Nothing installed or upgraded there since
-  2026-09-03/04, so "an update landed while comfy was running and the reboot
-  applied it" does not hold.
-- **Not the GPU, ROCm, the driver or the attention path.** A Flux.2 image on
-  the same box, same process, straight after a wedge: past its own text
-  encoder in ~35 s, UNet loaded, 41 s/step, `Prompt executed in 357.80
-  seconds`, PNG written - at 100-102W and 33% VRAM. Every MiniMax wedge sits
-  at 32-34W and 18% VRAM with the UNet never requested. **So a reboot is not
-  indicated**: the hardware demonstrably works at its documented speed.
-
-What is left is the MiniMax-H3 text-encoder pass itself, and it is a
-regression, not a slow path: the comment block in launch.sh measured that
-pass at ~1:57 (inside a 12:55 clip) on 2026-09-08, and the 1312x736 renders
-at 06:53/07:35/08:02 on 09-10 took 27-28 min each. After the 09:23 reboot the
-same pass has never finished - 3h48m on the first attempt - on the same
-weights, packages and flags.
-
-## This machine (launch.sh)
-
-- 128 GB Strix Halo, BIOS split 96 GiB VRAM / 31 GiB host. The host side is
-  the wall: ComfyUI keeps host copies of loaded models (TE 11.7 GB + UNet
-  18.8 GB > 31 GiB), so `--cache-none` is the *fast* setting and every
-  "keep models resident" flag was slower (all measured; see the comment block
-  in launch.sh). Real fix is the BIOS UMA split, not a flag.
-- ComfyUI runs `--use-pytorch-cross-attention` with
-  `TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1` (torch disables its flash /
-  mem-efficient SDPA on this GPU without it). Split attention needed 54.9 GiB
-  for one 3-second MiniMax-H3 clip; SDPA needs 0.5 GiB for the same 131k-token
-  attention and is faster on images too (42.2 vs 49.0 s/step, same plate).
-- ComfyUI runs with `TORCH_BLAS_PREFER_HIPBLASLT=0`: hipBLASLt on gfx1151
-  lacks kernels for some MiniMax-H3 GEMM shapes ("getKernel failed … named
-  symbol not found" → segfault mid-sample, 2026-09-07); rocBLAS has them.
-- Sampling is 49 s/step for Flux.2 at 1920×1080 here; loading is ~50 s of a
-  ~440 s image. Speed levers are steps and size, not memory flags.
+- `services/story_server.py` → prompts, import-novel, cutting, action-scenes,
+  video-prompt (narration / `inner` rules), previz (`/stage`)
+- `services/web_server.py` → `Batch`: rendering · `VideoBatch._render`: clips,
+  video-prompt, cutting, previz, action-scenes, 2026-10-06 · film:
+  chapter-film, subtitles · sound: foley, music, narration, casting ·
+  lipsync, upscale-4k, stop-all
+- `services/filmwords.py` → prompts, video-prompt, action-scenes, 2026-10-06
+- `services/look.py` → prompts, foley, music
+- `services/stage.py`, `previz.py` → previz, action-scenes
+- `services/fightcut.py` → action-scenes, video-prompt
+- `services/foley.py`, `scripts/make-fight-foley.py` → foley, video-prompt,
+  2026-10-06
+- `services/shotqa.py` → video-prompt, 2026-10-06
+- `services/h3_server.py` → clips, previz (control), video-prompt (NAG)
+- `services/tts_server.py`, `voices/` → narration, casting
+- `*.dc.html` → rendering, casting
+- `launch.sh` → machine, clips, wedge-2026-09-10

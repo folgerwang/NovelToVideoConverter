@@ -26,6 +26,7 @@ import gc
 import io
 import os
 import sys
+import tempfile
 import threading
 import time
 import wave
@@ -67,6 +68,67 @@ def _voice_files(name):
     return wav, txt
 
 
+def _rhythm_of(name):
+    """Which voice this one borrows its DELIVERY from, or "".
+
+    Zero-shot copies the reference clip's prosody along with its timbre, so
+    cadence and timbre normally arrive together and cannot be chosen
+    separately: pace, stress and phrasing all come from whichever 3-10 seconds
+    of speech is in voices/<name>.wav. Measured on one 36-character line, the
+    same text ran 9.30 s off one reference and 11.82 s off another.
+
+    An optional voices/<name>.rhythm file - one line, the name of another
+    voice - splits the two. The line is spoken first in the RHYTHM voice and
+    then converted to this one's timbre (CosyVoice's inference_vc), so the
+    delivery is the rhythm voice's and the person is this one. It is a file
+    rather than a request field so that a voice carries its own definition and
+    every picker keeps working unchanged.
+
+    One hop only: the rhythm voice's own .rhythm file is ignored, because a
+    chain is a loop waiting to happen and two conversions of the same audio
+    sound like neither voice.
+    """
+    p = os.path.join(CFG["voices_dir"], name + ".rhythm")
+    try:
+        with open(p, "r", encoding="utf-8") as fh:
+            src = fh.read().strip().splitlines()[0].strip()
+    except (OSError, IndexError):
+        return ""
+    if not src or src == name:
+        return ""
+    w, t = _voice_files(src)
+    return src if (os.path.isfile(w) and os.path.isfile(t)) else ""
+
+
+def _prompt_text(text):
+    """The reference clip's transcript in the form this generation expects.
+
+    CosyVoice3 was trained with the prompt transcript behind a system line and
+    every example in its own repo passes one; without it the model is being
+    asked for a shape it did not see in training. CosyVoice2 has no such line
+    and must not be given one -- it would be read as words to speak.
+    """
+    if _STATE.get("gen") == 3:
+        return "You are a helpful assistant.<|endofprompt|>" + text
+    return text
+
+
+def _instruct_text(text):
+    """A spoken direction in the form this generation expects.
+
+    CosyVoice3's LLM asserts that <|endofprompt|> is in the text it is handed
+    (llm.py: `assert 151646 in text`), and on the instruct2 path the direction
+    IS that text - the reference transcript is not used. Without the marker
+    every instructed line (an `inner` thought, any dialog with
+    BOOKREEL_DIALOG_INSTRUCT on) came back HTTP 500 (2026-10-15, C01S06
+    不好，失态了). The narration rule measured instruct2 obeying on v3 with
+    exactly this suffix. v2 gets the direction untouched.
+    """
+    if _STATE.get("gen") == 3 and "<|endofprompt|>" not in text:
+        return text + "<|endofprompt|>"
+    return text
+
+
 def _list_voices():
     d = CFG["voices_dir"]
     if not os.path.isdir(d):
@@ -87,8 +149,34 @@ def _list_voices():
     return out
 
 
+def _rss_gb():
+    try:
+        with open("/proc/self/statm", "r") as fh:
+            return int(fh.read().split()[1]) * (os.sysconf("SC_PAGE_SIZE") / 1e9)
+    except (OSError, IndexError, ValueError):
+        return 0.0
+
+
+# Above this many GB still held after the engine is dropped, re-exec instead of
+# pretending the memory came back. ComfyUI needs ~24.5 GB of the 31 GiB host to
+# render a segment, so anything above ~5 GB sitting here is the difference
+# between a render and an OOM kill.
+RSS_CEILING_GB = float(os.environ.get("BOOKREEL_TTS_RSS_CEILING", "3.0"))
+
+
 def _reaper():
-    """Release the engine after IDLE_UNLOAD seconds with no synthesis."""
+    """Release the engine after IDLE_UNLOAD seconds with no synthesis.
+
+    Dropping the handle is not the same as giving the memory back. Python's
+    allocator keeps the arenas: with CosyVoice2 that left 4.7 GB resident, and
+    with the bigger v3 weights it is 6.1 GB - measured 2026-09-16, after which
+    ComfyUI (24.5 GB) could no longer load and the kernel killed it THREE
+    times in one day, each kill costing the shot in flight. malloc_trim gives
+    back what it can; when that is not enough the process re-execs itself,
+    which is the only thing that reliably returns the pages. That is safe here
+    because the service holds no state - voices are read from disk per request
+    - and it costs an ~11 s reload that the next call was going to pay anyway.
+    """
     while True:
         time.sleep(30)
         if IDLE_UNLOAD <= 0:
@@ -100,9 +188,27 @@ def _reaper():
             if idle < IDLE_UNLOAD:
                 continue
             _STATE["engine"] = None
-            print("[tts] idle %.0fs, released CosyVoice2 (reloads on the next call)"
-                  % idle, flush=True)
+            print("[tts] idle %.0fs, released CosyVoice%d" % (idle, _STATE.get("gen", 2)),
+                  flush=True)
         gc.collect()
+        try:
+            import ctypes
+            ctypes.CDLL("libc.so.6").malloc_trim(0)
+        except Exception:                                   # noqa: BLE001
+            pass
+        held = _rss_gb()
+        if held > RSS_CEILING_GB:
+            # Never re-exec out from under a synthesis. If one has started in
+            # the meantime the lock is held, and this simply waits for the next
+            # idle window rather than losing a shot's narration.
+            if not _SYNTH_LOCK.acquire(blocking=False):
+                continue
+            print("[tts] %.1f GB still held after unload -- re-exec to give it back"
+                  % held, flush=True)
+            sys.stdout.flush()
+            sys.stderr.flush()
+            os.execv(sys.executable, [sys.executable] + sys.argv)
+        print("[tts] %.1f GB resident after unload" % held, flush=True)
 
 
 def _load():
@@ -117,8 +223,14 @@ def _load():
         # The CosyVoice repo is not a pip package -- install.bat clones it to
         # third_party/CosyVoice and we add it (plus its Matcha-TTS submodule)
         # to sys.path here.
+        # CosyVoice3 first: that checkout's AutoModel loads a v2 model dir as
+        # well as a v3 one (it picks on which of cosyvoice{,2,3}.yaml is in the
+        # directory), so one checkout speaks both and the generation is chosen
+        # by --model alone. The old checkout stays as the fallback, which is
+        # what makes rolling back a path change rather than a code change.
         here = os.path.dirname(os.path.abspath(__file__))
         for cand in (
+            os.path.join(here, "..", "third_party", "CosyVoice3"),
             os.path.join(here, "..", "third_party", "CosyVoice"),
             os.path.join(here, "..", "CosyVoice"),
         ):
@@ -131,14 +243,18 @@ def _load():
                     sys.path.insert(0, matcha)
                 break
 
+        loader = None
         try:
-            from cosyvoice.cli.cosyvoice import CosyVoice2
-        except Exception as exc:  # noqa: BLE001
-            _STATE["error"] = (
-                "CosyVoice2 is not importable. It is not on PyPI -- run install.bat "
-                "step [2/4], which clones it into third_party\\CosyVoice. Detail: %s" % exc
-            )
-            return
+            from cosyvoice.cli.cosyvoice import AutoModel as loader
+        except Exception:  # noqa: BLE001  - older checkout, no AutoModel
+            try:
+                from cosyvoice.cli.cosyvoice import CosyVoice2 as loader
+            except Exception as exc:  # noqa: BLE001
+                _STATE["error"] = (
+                    "CosyVoice is not importable. It is not on PyPI -- run install.bat "
+                    "step [2/4], which clones it into third_party\\CosyVoice. Detail: %s" % exc
+                )
+                return
 
         path = CFG["model_path"]
         if not path or not os.path.isdir(path):
@@ -147,17 +263,28 @@ def _load():
             )
             return
 
+        # Which generation this model dir is, read off the file the loader
+        # itself dispatches on. It decides one thing downstream: v3 wants the
+        # reference transcript behind a system line (see _prompt_text).
+        gen = 3 if os.path.isfile(os.path.join(path, "cosyvoice3.yaml")) else 2
+        _STATE["gen"] = gen
+
         t0 = time.time()
-        print("[tts] loading CosyVoice2 from %s ..." % path, flush=True)
+        print("[tts] loading CosyVoice%d from %s ..." % (gen, path), flush=True)
         try:
-            engine = CosyVoice2(path, load_jit=False, load_trt=False, fp16=False)
+            # No load_jit: CosyVoice3.__init__ does not take it, and it is
+            # False everywhere here anyway.
+            engine = loader(model_dir=path, fp16=False)
+        except TypeError:
+            engine = loader(path)  # older checkout, positional only
         except Exception as exc:  # noqa: BLE001
-            _STATE["error"] = "failed to load CosyVoice2: %s" % exc
+            _STATE["error"] = "failed to load CosyVoice%d: %s" % (gen, exc)
             print("[tts] load failed: %s" % exc, flush=True)
             return
         _STATE["engine"] = engine
         _STATE["sr"] = int(getattr(engine, "sample_rate", 24000))
-        print("[tts] ready in %.1fs, sr=%d" % (time.time() - t0, _STATE["sr"]), flush=True)
+        print("[tts] ready in %.1fs, sr=%d, cosyvoice%d"
+              % (time.time() - t0, _STATE["sr"], gen), flush=True)
 
 
 def _prompt_forms(wav_path):
@@ -210,7 +337,12 @@ def health():
     voices = _list_voices()
     return {
         "status": "ok",
-        "engine": "cosyvoice2",
+        # Read off the model directory, not hardcoded: this used to say
+        # cosyvoice2 while a v3 directory was speaking. Answers before the
+        # first load too, when _STATE has no generation yet.
+        "engine": "cosyvoice%d" % (
+            _STATE.get("gen")
+            or (3 if os.path.isfile(os.path.join(CFG["model_path"], "cosyvoice3.yaml")) else 2)),
         "path": CFG["model_path"],
         "device": CFG["device"],
         "sample_rate": _STATE["sr"],
@@ -259,10 +391,50 @@ def tts(req: TTSRequest):
     if not 0.5 <= speed <= 2.0:
         raise HTTPException(status_code=400, detail="speed must be between 0.5 and 2.0")
 
+    rhythm = _rhythm_of(name)
     t0 = time.time()
     chunks = []
     engine = _STATE["engine"]
     with _SYNTH_LOCK:
+        if rhythm:
+            # Two passes. The first speaks the line in the rhythm voice, which
+            # is what fixes the cadence; the second keeps that performance and
+            # replaces the speaker. Speed belongs to the first pass - it is the
+            # one generating the timing, and applying it twice stretches the
+            # audio twice.
+            rw, rt = _voice_files(rhythm)
+            with open(rt, "r", encoding="utf-8") as fh:
+                rtext = fh.read().strip()
+            src = []
+            try:
+                for piece in engine.inference_zero_shot(text, _prompt_text(rtext), rw,
+                                                        stream=False, speed=speed):
+                    src.append(piece["tts_speech"])
+            except Exception as exc:  # noqa: BLE001
+                raise HTTPException(status_code=500,
+                                    detail="rhythm pass failed (%s): %s" % (rhythm, exc))
+            if not src:
+                raise HTTPException(status_code=500, detail="rhythm pass produced no audio")
+            import torch as _t
+            mid = _t.cat(src, dim=-1) if len(src) > 1 else src[0]
+            fd, tmp = tempfile.mkstemp(suffix=".wav", prefix="bookreel-vc-")
+            os.close(fd)
+            try:
+                with open(tmp, "wb") as fh:
+                    fh.write(_to_wav_bytes(mid, _STATE["sr"]))
+                for piece in engine.inference_vc(tmp, wav_path, stream=False, speed=1.0):
+                    chunks.append(piece["tts_speech"])
+            except Exception as exc:  # noqa: BLE001
+                raise HTTPException(status_code=500,
+                                    detail="voice conversion failed (%s -> %s): %s"
+                                           % (rhythm, name, exc))
+            finally:
+                try:
+                    os.unlink(tmp)
+                except OSError:
+                    pass
+            if not chunks:
+                raise HTTPException(status_code=500, detail="voice conversion produced no audio")
         last = None
         # Which of the two CosyVoice APIs this checkout speaks. The current
         # repo wants the reference clip as a PATH and loads it itself, twice,
@@ -270,16 +442,16 @@ def tts(req: TTSRequest):
         # Older revisions wanted a tensor the caller had already loaded at
         # 16k. Passing the wrong one dies in the frontend, before any
         # generation, so trying the path first and falling back costs nothing.
-        for prompt_wav in _prompt_forms(wav_path):
+        for prompt_wav in ([] if chunks else _prompt_forms(wav_path)):
             chunks = []
             try:
                 if req.instruct:
                     gen = engine.inference_instruct2(
-                        text, req.instruct, prompt_wav, stream=False, speed=speed
+                        text, _instruct_text(req.instruct), prompt_wav, stream=False, speed=speed
                     )
                 else:
                     gen = engine.inference_zero_shot(
-                        text, prompt_text, prompt_wav, stream=False, speed=speed
+                        text, _prompt_text(prompt_text), prompt_wav, stream=False, speed=speed
                     )
                 for piece in gen:
                     chunks.append(piece["tts_speech"])
@@ -288,7 +460,8 @@ def tts(req: TTSRequest):
             except Exception as exc:  # noqa: BLE001
                 last = exc
         else:
-            raise HTTPException(status_code=500, detail="synthesis failed: %s" % last)
+            if not chunks:
+                raise HTTPException(status_code=500, detail="synthesis failed: %s" % last)
 
     _LAST_USE[0] = time.time()
     if not chunks:
@@ -300,8 +473,9 @@ def tts(req: TTSRequest):
     data = _to_wav_bytes(audio, _STATE["sr"])
     secs = len(data) / (2.0 * _STATE["sr"])
     took = time.time() - t0
-    print("[tts] %s | %d chars -> %.1fs audio in %.1fs (%.1fx realtime)"
-          % (name, len(text), secs, took, (took / secs) if secs else 0), flush=True)
+    print("[tts] %s%s | %d chars -> %.1fs audio in %.1fs (%.1fx realtime)"
+          % (name, (" (rhythm %s)" % rhythm) if rhythm else "",
+             len(text), secs, took, (took / secs) if secs else 0), flush=True)
 
     headers = {"X-Audio-Seconds": "%.2f" % secs, "X-Synth-Seconds": "%.2f" % took}
 
